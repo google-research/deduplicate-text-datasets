@@ -39,6 +39,10 @@ If you additionally want to generate datasets to run the rust script on (and you
 
 If you just want to reproduce the result of this paper, or deduplicate any language model that's already in the [Tensorflow Datasets (TFDS)](https://www.tensorflow.org/datasets) format, then you can just run the following commands:
 
+```cargo build```
+
+to compile the rust code, and then run
+
 ```python3 scripts/load_dataset.py --data_dir $LOAD_DIR --save_dir $SAVE_DIR --name $DATASET --split $SPLIT [--tokenize]```
 
 For example, to get the LM1B training set you could run `python3 scripts/load_dataset.py --data_dir ~/tensorflow_datasets --save_dir data --name lm1b --split test`. This should will take just a few seconds to run on the test set or about an hour if running with the `train` set instead.
@@ -61,7 +65,7 @@ Once you have the suffix array, you now query the dataset to find all occurances
 
 ```python3 scripts/count_occurances.py --suffix [path/to/suffix_array] [--query query_string] [--query_file /path/to/query]```
 
-On the LM1B test set, running `python3 scripts/count_occurances.py --suffix data/lm1b.test --query " on Tuesday" should return 1288. If you tokenized the dataset, then you should pass `--tokenize` to `count_occurences.py` as well, to get the same result.
+On the LM1B test set, running `python3 scripts/count_occurances.py --suffix data/lm1b.test --query " on Tuesday" should return 1288. If you tokenized the dataset, then you should pass `--tokenize` to `count_occurences.py` as well, to get the same result (plus or minus tokenization differences).
 
 
 If you want to confirm this the outputted number is correct (assuming you haven't tokenized), you can run `cat /tmp/lm1b.test | grep -ao " on Tuesday"` and get the same result.
