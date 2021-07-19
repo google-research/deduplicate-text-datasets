@@ -6,6 +6,10 @@ In an upcoming update, we will add files to reproduce the NearDup-deduplicated v
 
 This is not an officially supported Google product.
 
+## Why deduplicate?
+When datasets are created by scraping raw text from the Internet, this will often result in the same sequences being repeated multiple times (e.g., we find a single 50 word sequence that is repeated in the C4 dataset 60,000 times).
+Training models on deduplicated datasets is faster (because they see fewer total examples) and experimentally results in models with similar or better perplexity to models trained on data that hasn't been deduplicated. Moreover, language models are less likely to exhibit memorization when their training data has been well-deduplicated.
+
 ## Citing this work
 
 If you use this repository or our deduplicated datasets you can cite
