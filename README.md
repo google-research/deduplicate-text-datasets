@@ -23,7 +23,7 @@ If you use this repository or our deduplicated datasets you can cite
 }
 ```
 
-## Exact Deduplication Code
+# Exact Deduplication Code
 
 We provide an implementation of the exact deduplication technique used in the paper. This is very much research code. It is (a very slightly cleaned up) version of exactly what we do in the paper. It assumes that you want to deduplicate something the size of C4 (~300GB) running on a machine with 96 cores and >600GB of RAM. If you only want to use this for reasonably-sized datasets, you should change the number of parallel threads from 96 to something smaller. If your machine is big enough, there should be no upper bound on the size of the dataset it can handle (well, 2^64-1 bytes is the limit, but I think we can all agree that's essentially unlimited).
 
@@ -39,7 +39,7 @@ If you additionally want to generate datasets to run the rust script on (and you
 
 ```pip3 install numpy scipy tensorflow tensorflow_datasets transformers sentencepiece```
 
-### Basic Usage
+## Basic Usage
 
 If you just want to reproduce the result of this paper, or deduplicate any language model that's already in the [Tensorflow Datasets (TFDS)](https://www.tensorflow.org/datasets) format, then you can just run the following commands:
 
@@ -61,7 +61,7 @@ For example, if you run `python3 scripts/make_suffix_array.py data/lm1b.test`, t
 
 (If you get an error that you have too many open files, that's because this script opens lots of files. You should run `ulimit -Sn 1000000` to "fix" the error.)
 
-#### Querying a suffix array to find duplicated examples
+### Querying a suffix array to find duplicated examples
 
 Start by loading and building a suffix array for a dataset as described above
 
@@ -74,11 +74,11 @@ On the LM1B test set, running `python3 scripts/count_occurances.py --suffix data
 
 If you want to confirm this the outputted number is correct (assuming you haven't tokenized), you can run `cat /tmp/lm1b.test | grep -ao " on Tuesday"` and get the same result.
 
-### Advanced Usage
+## Advanced Usage
 
 The above scripts work by calling into the core Rust suffix array deduplicator. If you want to do each step yourself, the following options are available:
 
-#### Single threaded suffix array construction
+### Single threaded suffix array construction
 
 To build a suffix array for any particular file, you can run
 
@@ -86,7 +86,7 @@ To build a suffix array for any particular file, you can run
 
 This will create a file called `[file_path].table.bin` which contains the suffix array for the file provided. This algorithm is linear time, but (a) only runs on a single core, and (b) has memory requirement `O(big * len(file))` which is prohibitive for large files.
 
-#### Parallel suffix array construction
+### Parallel suffix array construction
 
 To build a suffix array for an extremely large file (e.g., ~about as much RAM as available) it is better to run the script
 
@@ -97,7 +97,7 @@ This script will build the suffix array in parallel by splitting the single file
 
 The two steps are described below.
 
-##### Building a piece of a suffix array from a piece of a file
+#### Building a piece of a suffix array from a piece of a file
 
 The first generats a suffix array from a piece of a file. This is implemented by running
 
@@ -105,7 +105,7 @@ The first generats a suffix array from a piece of a file. This is implemented by
 
 And builds a suffix array for the byte sequence between [byte_start] and [byte_end] for the given file. Multiple of these can be run in parallel to build a suffix array for a file quickly.
 
-##### Merging suffix array pieces to create a single suffix array
+#### Merging suffix array pieces to create a single suffix array
 
 Given the several independent suffix arrays, merging them is now just a matter of calling
 
@@ -115,7 +115,7 @@ to generate a collection of ordered suffix arrays pieces in the output directory
 
 ```cat [tmp_output_directory]/* > [file_path].table.bin```
 
-#### Finding Duplicates
+### Finding Duplicates
 
 Given a suffix array file, as generated in the prevous section, it can now be queried for interesting statistics.
 The simplest operation, counting occurrences of particular substrings, takes O(log(N)) time and O(query_length) memory requirements, (as shown above with `scripts/count_occurances.py`). To do this you can run:
@@ -125,7 +125,7 @@ The simplest operation, counting occurrences of particular substrings, takes O(l
 (Indeed, the python script is just a wrapper that makes calling this nicer, with the option for tokenization.)
 This is useful mainly as a commandline interface to interact with the dataset to find interesting properties. To run more sophisticated analysis, use the tools described below:
 
-##### Finding duplicates between two documents
+#### Finding duplicates between two documents
 
 Given a document A and another document B, we can find all duplicates betwen the two by (1) constructing suffix arrays for both, and then (2) linearly walking the suffix arrays in order to find all duplicates of a given length.
 
@@ -141,7 +141,7 @@ The second step is then to run
 
 ```cargo run collect_similar [dataset2]```. This converts the result to instead compute ranges so that instead we have dataset2[xi:yi] match.
 
-##### Finding duplicates within one document
+#### Finding duplicates within one document
 
 To find duplicates that are contained within one document (for example, to actually deduplicate a dataset as we do in the paper) run the command
 
@@ -149,6 +149,6 @@ To find duplicates that are contained within one document (for example, to actua
 
 This will find all repeated substrings contained in the dataset above a given length threshold. Again run collect_similar to find the indexs of repeated examples.
 
-## Approx Deduplication Results
+# Approx Deduplication Results
 
 Coming soon.
