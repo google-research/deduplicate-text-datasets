@@ -1,14 +1,14 @@
 # Deduplicating Training Data Makes Language Models Better
 
 This repository contains code to deduplicate language model datasets as descrbed in the paper ["Deduplicating Training Data Makes Language Models Better"](https://arxiv.org/abs/2107.06499) by Katherine Lee, Daphne Ippolito, Andrew Nystrom, Chiyuan Zhang, Douglas Eck, Chris Callison-Burch and Nicholas Carlini.
-Language model datasets are often created by scraping raw text from the Internet.
-Often, this means the same sequences will be repeated multiple times (e.g., we find a single 50 word sequence that is repeated in the C4 dataset 60,000 times).
-Training models on deduplicated datasets is faster (because they see fewer total examples) and experimentally results in models with similar perplexity.
-
-This repository contains both the ExactSubstr deduplication implementation (written in Rust) along with the scripts we used in the paper to perform deduplication and inspect the results (written in python).
+This repository contains both the ExactSubstr deduplication implementation (written in Rust) along with the scripts we used in the paper to perform deduplication and inspect the results (written in Python).
 In an upcoming update, we will add files to reproduce the NearDup-deduplicated versions of the C4, RealNews, LM1B, and Wiki-40B-en datasets.
 
 This is not an officially supported Google product.
+
+## Why deduplicate?
+When datasets are created by scraping raw text from the Internet, this will often result in the same sequences being repeated multiple times (e.g., we find a single 50 word sequence that is repeated in the C4 dataset 60,000 times).
+Training models on deduplicated datasets is faster (because they see fewer total examples) and experimentally results in models with similar or better perplexity to models trained on data that hasn't been deduplicated. Moreover, language models are less likely to exhibit memorization when their training data has been well-deduplicated.
 
 ## Citing this work
 
@@ -29,7 +29,6 @@ We provide an implementation of the exact deduplication technique used in the pa
 
 
 We build a suffix array (based on [Andrew Gallant's suffix array implementation](https://github.com/BurntSushi/suffix/)) in [src/table.rs](src/table.rs). It has some minor changes from the original version that make it so we can't just import this library as a crate. First, we need 64-bit integers. The original implementation says that u32 works for "reasonably sized documents (~4GB)" but we're working with unreasonably sized documents. So we need u64. Second, we don't want UTF8 strings. Everything is a [u8] byte array, because we might be working over token sequences which aren't valid UTF8.
-
 The main complication in the rest of [src/main.rs](src/main.rs) is the fact that we want things to run in parallel, and we probably can't fit the entire suffix array into memory. And so all of our algorithms are designed around these constraints.
 
 If you just want to run the rust deduplicator, then you will only need to install Rust:
@@ -50,17 +49,17 @@ to compile the rust code, and then run
 
 ```python3 scripts/load_dataset.py --data_dir $LOAD_DIR --save_dir $SAVE_DIR --name $DATASET --split $SPLIT [--tokenize]```
 
-For example, to get the LM1B training set you could run `python3 scripts/load_dataset.py --data_dir ~/tensorflow_datasets --save_dir data --name lm1b --split test`. This should will take just a few seconds to run, or ~an hour if running with the `train` set instead.
+For example, to get the LM1B training set you could run `python3 scripts/load_dataset.py --data_dir ~/tensorflow_datasets --save_dir data --name lm1b --split test`. This should will take just a few seconds to run on the test set or about an hour if running with the `train` set instead.
 
-If the dataset is really big, you might want to add the --tokenize flag. This will shrink the dataset by roughly a factor of two, tokenizing it with the GPT-2 tokenizer.
+If the dataset is really big, you might want to add the `--tokenize` flag. This will shrink the dataset by roughly a factor of two by tokenizing it with the GPT-2 tokenizer.
 
 And then to construct the suffix array run
 
 ```python3 scripts/make_suffix_array.py [path/to/dataset]```
 
-For example run `python3 scripts/make_suffix_array.py data/lm1b.test` and this will creat a file `data/lm1b.test.table.bin` containing the suffix array. Again this should be fast, or about two hours on the train set (on one thread, a few minutes on 96 cores).
+For example, if you run `python3 scripts/make_suffix_array.py data/lm1b.test`, this will create a file `data/lm1b.test.table.bin` containing the suffix array. Again, this should be fast, about two hours on the LM1B train set when run single-thread and a few minutes on 96 cores.
 
-(If you get an error that you have too many open files, that's because this script opens lots of files. You should run `ulimit -Sn 1000000` to "fix" it.)
+(If you get an error that you have too many open files, that's because this script opens lots of files. You should run `ulimit -Sn 1000000` to "fix" the error.)
 
 ### Querying a suffix array to find duplicated examples
 
@@ -70,13 +69,14 @@ Once you have the suffix array, you now query the dataset to find all occurances
 
 ```python3 scripts/count_occurances.py --suffix [path/to/suffix_array] [--query query_string] [--query_file /path/to/query]```
 
-On the LM1B test set, running `python3 scripts/count_occurances.py --suffix data/lm1b.test --quedry " on Tuesday"` should return 1288. If you tokenized the dataset then you should pass `--tokenize` this time as well, to get the same result (plus or minus tokenization differences).
+On the LM1B test set, running `python3 scripts/count_occurances.py --suffix data/lm1b.test --query " on Tuesday" should return 1288. If you tokenized the dataset, then you should pass `--tokenize` to `count_occurences.py` as well, to get the same result (plus or minus tokenization differences).
 
-If you want to confirm this number is correct (and you haven't tokenized) then you can run `cat /tmp/lm1b.test | grep -ao " on Tuesday"` and get the same result.
+
+If you want to confirm this the outputted number is correct (assuming you haven't tokenized), you can run `cat /tmp/lm1b.test | grep -ao " on Tuesday"` and get the same result.
 
 ## Advanced Usage
 
-The above scripts works by calling into the core rust suffix array deduplicator. If you want to do this yourself, it has the following options available:
+The above scripts work by calling into the core Rust suffix array deduplicator. If you want to do each step yourself, the following options are available:
 
 ### Single threaded suffix array construction
 
@@ -115,19 +115,17 @@ to generate a collection of ordered suffix arrays pieces in the output directory
 
 ```cat [tmp_output_directory]/* > [file_path].table.bin```
 
-### Finding duplicated examples
+### Finding Duplicates
 
-Given a suffix array for a file (either by running it single threaded, or performing a parallel construction) it can now be queried for interesting statistics.
-
-The simplest operation can count occurrances of particular substrings in O(log(N)) time and O(query_length) memory requirements (as shown above with `scripts/count_occurances.py`). To do this you can run
+Given a suffix array file, as generated in the prevous section, it can now be queried for interesting statistics.
+The simplest operation, counting occurrences of particular substrings, takes O(log(N)) time and O(query_length) memory requirements, (as shown above with `scripts/count_occurances.py`). To do this you can run:
 
 ```cargo run count_occurances /path/to/dataset /path/to/query_file```
 
 (Indeed, the python script is just a wrapper that makes calling this nicer, with the option for tokenization.)
+This is useful mainly as a commandline interface to interact with the dataset to find interesting properties. To run more sophisticated analysis, use the tools described below:
 
-This is useful mainly as a commandline interface to interact with the dataset to find interesting properties. To run more sophisticated analysis there are other tools.
-
-### Finding duplicates between two documents
+#### Finding duplicates between two documents
 
 Given a document A and another document B, we can find all duplicates betwen the two by (1) constructing suffix arrays for both, and then (2) linearly walking the suffix arrays in order to find all duplicates of a given length.
 
@@ -153,4 +151,4 @@ This will find all repeated substrings contained in the dataset above a given le
 
 # Approx Deduplication Results
 
-Coming soon
+Coming soon.
