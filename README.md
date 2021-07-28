@@ -1,8 +1,8 @@
 # Deduplicating Training Data Makes Language Models Better
 
 This repository contains code to deduplicate language model datasets as descrbed in the paper ["Deduplicating Training Data Makes Language Models Better"](https://arxiv.org/abs/2107.06499) by Katherine Lee, Daphne Ippolito, Andrew Nystrom, Chiyuan Zhang, Douglas Eck, Chris Callison-Burch and Nicholas Carlini.
-This repository contains both the ExactSubstr deduplication implementation (written in Rust) along with the scripts we used in the paper to perform deduplication and inspect the results (written in Python).
-In an upcoming update, we will add files to reproduce the NearDup-deduplicated versions of the C4, RealNews, LM1B, and Wiki-40B-en datasets.
+We release the ExactSubstr deduplication implementation (written in Rust) along with the scripts we used in the paper to perform ExactSubstr deduplication and inspect the results (written in Python).
+We also release the document clusters resulting from running NearDup deduplication on C4, RealNews, LM1B, and Wiki-4B-en.
 
 This is not an officially supported Google product.
 
@@ -151,4 +151,11 @@ This will find all repeated substrings contained in the dataset above a given le
 
 # Approx Deduplication Results
 
-Coming soon.
+The following CSVs contain three columns: the document ID, a boolean indicating whether or not this document was deleted during deduplication, and a cluster ID.
+Documents with the same cluster ID were identified as near-duplicates. For C4 and RealNews, the document ID is the url associated with the document. For Wiki-40B, it is the `wikidata_id`. LM1B coming soon.
+
+**Name**|**Link**|**Size**
+:-----:|:-----:|:-----:
+C4|[link](https://storage.googleapis.com/gresearch/data_deduplication/c4.tar.gz)|13GB
+RealNews|[link](https://storage.googleapis.com/gresearch/data_deduplication/realnews.tar.gz)|1.4GB
+Wiki-40B|[link](https://storage.googleapis.com/gresearch/data_deduplication/wiki40b.tar.gz)|26MB
