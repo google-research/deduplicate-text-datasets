@@ -73,7 +73,7 @@ if tokenize:
 
 for example in tqdm(ds):
     out = example[key] if tokenize else example[key].encode("utf8")
-    next_line = sep() + example[key]
+    next_line = sep() + out
     fout.write(next_line)
     sizes.append(sizes[-1] + len(next_line))
 
