@@ -16,6 +16,7 @@ import os
 import struct
 import numpy as np
 from transformers import GPT2Tokenizer
+from tqdm import tqdm
 
 import argparse
 
@@ -26,6 +27,7 @@ parser.add_argument('--name', type=str)
 parser.add_argument('--split', type=str)
 parser.add_argument('--subset', type=str, default=None)
 parser.add_argument('--tokenize', action='store_true')
+parser.add_argument('--num_workers', type=int, default=None)
 parser.add_argument('--text_feature_key', type=str, default="text")
 
 args = parser.parse_args()
@@ -35,11 +37,12 @@ if args.tokenize:
 
 data_dir = args.data_dir
 save_dir = args.save_dir
+dataset_name = args.name
 split = args.split
 subset = args.subset
-dataset_name = args.name
-key = args.text_feature_key
 tokenize = args.tokenize
+num_workers = args.num_workers
+key = args.text_feature_key
 
 ds = datasets.load_dataset(dataset_name, subset, split=split)
 assert isinstance(ds, datasets.Dataset), "This is not a HF-dataset. It might be a DatasetDict. Try passing `split`?"
@@ -60,22 +63,16 @@ def tokenize_to_bytes(examples):
     return tokenized
 
 
-def str_to_bytes(examples):
-    examples["text"] = [text.encode("utf8") for text in examples["text"]]
-    return examples
-
-
 os.makedirs(save_dir, exist_ok=True)
 fout = open(os.path.join(save_dir, dataset_name + "." + split), "wb")
 sizes = [0]
 
 if tokenize:
-    ds = ds.map(tokenize_to_bytes, batched=True)
+    ds = ds.map(tokenize_to_bytes, batched=True, num_proc=num_workers)
     key = "input_ids"
-else:
-    ds = ds.map(str_to_bytes, batched=True)
 
-for example in ds:
+for example in tqdm(ds):
+    out = example[key] if tokenize else example[key].encode("utf8")
     next_line = sep() + example[key]
     fout.write(next_line)
     sizes.append(sizes[-1] + len(next_line))
