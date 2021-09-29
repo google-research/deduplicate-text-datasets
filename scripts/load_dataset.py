@@ -38,19 +38,17 @@ data_dir = args.data_dir
 save_dir = args.save_dir
 dataset_name = args.name
 
-ds = tfds.load(dataset_name, split=split, shuffle_files=False, batch_size=2 ** 16,
+
+ds = tfds.load(dataset_name, split=split, shuffle_files=False, batch_size=2**16,
                data_dir=data_dir)
 assert isinstance(ds, tf.data.Dataset)
 print(ds)
 
 UID = 0
-
-
 def sep():
     global UID
     UID += 1
-    return b"\xff\xff" + struct.pack("<I", UID)
-
+    return b"\xff\xff"+struct.pack("<I", UID)
 
 def tok(x):
     if args.tokenize:
@@ -61,7 +59,7 @@ def tok(x):
     return out
 
 
-fout = open(os.path.join(save_dir, dataset_name + "." + split), "wb")
+fout = open(os.path.join(save_dir, dataset_name+"."+split), "wb")
 
 p = mp.Pool(96)
 
@@ -71,13 +69,12 @@ for b in ds:
     print(i)
 
     text = b['text'].numpy()
-    text = p.map(tok, text)
-
+    text = p.map(tok,text)
+    
     for x in text:
-        next_line = sep() + x
+        next_line = sep()+x
         fout.write(next_line)
-        sizes.append(sizes[-1] + len(next_line))
+        sizes.append(sizes[-1]+len(next_line))
     i += 1
 
-open(os.path.join(save_dir, dataset_name + "." + split + ".size"), "wb").write(
-    np.array(sizes, dtype=np.uint64).tobytes())
+open(os.path.join(save_dir,dataset_name+"."+split+".size"), "wb").write(np.array(sizes,dtype=np.uint64).tobytes())
