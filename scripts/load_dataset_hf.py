@@ -75,8 +75,8 @@ if tokenize:
 else:
     ds = ds.map(str_to_bytes, batched=True)
 
-for x in ds[key]:
-    next_line = sep() + x
+for example in ds:
+    next_line = sep() + example[key]
     fout.write(next_line)
     sizes.append(sizes[-1] + len(next_line))
 
