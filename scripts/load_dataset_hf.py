@@ -17,13 +17,17 @@ import struct
 import numpy as np
 from transformers import GPT2Tokenizer
 from tqdm import tqdm
+import glob
 
 import argparse
 
+
+FILE_EXTENSIONS = {"text": "txt", "json": "jsonl", "csv": "csv"}
+
 parser = argparse.ArgumentParser(description='Load a dataset.')
-parser.add_argument('--data_dir', type=str)
 parser.add_argument('--save_dir', type=str)
 parser.add_argument('--name', type=str)
+parser.add_argument('--data_dir', type=str, default=None)
 parser.add_argument('--split', type=str)
 parser.add_argument('--subset', type=str, default=None)
 parser.add_argument('--tokenize', action='store_true')
@@ -35,8 +39,8 @@ args = parser.parse_args()
 if args.tokenize:
     tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
-data_dir = args.data_dir
 save_dir = args.save_dir
+data_dir = args.data_dir
 dataset_name = args.name
 split = args.split
 subset = args.subset
@@ -44,7 +48,12 @@ tokenize = args.tokenize
 num_workers = args.num_workers
 key = args.text_feature_key
 
-ds = datasets.load_dataset(dataset_name, subset, split=split)
+if dataset_name in FILE_EXTENSIONS:
+    assert data_dir is not None
+    data_files = glob.glob(f"{data_dir}/*.{FILE_EXTENSIONS[dataset_name]}")
+    ds = datasets.load_dataset(dataset_name, subset, data_files=data_files, split=split)
+else:
+    ds = datasets.load_dataset(dataset_name, subset, split=split)
 assert isinstance(ds, datasets.Dataset), "This is not a HF-dataset. It might be a DatasetDict. Try passing `split`?"
 
 UID = 0
