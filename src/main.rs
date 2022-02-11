@@ -364,7 +364,7 @@ fn load_table_64<'s,'t>(arg:usize) -> table::SuffixTable<'s,'t> {
 /* Get the next word from the suffix table. */
 fn get_next_82(mut tablestream:&mut TableStream) -> u64 {
     if tablestream.ptr >= tablestream.cache.len() {
-	tablestream.file.read_exact(&mut tablestream.cache);
+	let _ = tablestream.file.read_exact(&mut tablestream.cache);
 	tablestream.ptr = 0;
     }
     let out = u64::from_le_bytes(tablestream.cache[tablestream.ptr..tablestream.ptr+8].try_into().expect("sdf")) as u64;
@@ -376,7 +376,7 @@ fn get_next_82(mut tablestream:&mut TableStream) -> u64 {
  * with get_next_82.  */
 fn get_next_8(file:&mut BufReader<File>, mut cache:&mut [u8], ptr:&mut usize) -> u64 {
     if *ptr >= cache.len() {
-	file.read_exact(&mut cache);
+	let _ = file.read_exact(&mut cache);
 	*ptr = 0;
     }
     let out = u64::from_le_bytes(cache[*ptr..*ptr+8].try_into().expect("sdf")) as u64;
@@ -443,12 +443,6 @@ impl<'a> PartialOrd for State<'a> {
 
 
 const HACKSIZE:usize=100000;
-
-fn get_example_index(table:&[u64], position:u64) -> usize{
-    return binary_search(table, |&value| {
-        position < value
-    });
-}
 
 fn count_occurances(text: &mut File, mut table: &mut BufReader<File>, size: u64, str: &[u8]) -> u64{
     let mut buf = vec![0u8; str.len()];
@@ -838,8 +832,7 @@ fn main()  -> std::io::Result<()> {
 		result.push(one_result);
 	    }
 
-	    let thread_sum:usize = result.into_iter().map(|t| t.join()).sum();
-	    println!("Final answer {:?}", thread_sum);
+	    println!("Finished dedup. Intermediate outputs are now saved to /tmp/dups_{}*.",  env::args().nth(2).unwrap().split("/").last().unwrap());
         
 	});
 
