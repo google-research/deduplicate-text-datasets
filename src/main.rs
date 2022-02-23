@@ -855,7 +855,7 @@ fn cmd_collect(ds_name: &String, cache_dir: &String)  -> std::io::Result<()> {
     let mut path_list = Vec::with_capacity(1000);
     for path in paths {
         let path = path.unwrap().path().as_path().to_str().unwrap().to_string();
-	if !path.starts_with(&format!("{}/dups_{}_", cache_dir, ds_name.clone())) {
+	if !path.starts_with(&Path::new(cache_dir).join(format!("dups_{}_", ds_name.clone())).into_os_string().into_string().unwrap()) {
 	    continue;
 	}
 	path_list.push(path);

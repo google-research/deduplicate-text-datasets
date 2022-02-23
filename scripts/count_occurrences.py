@@ -44,11 +44,11 @@ if args.query:
     open("/tmp/fin","wb").write(arr)
     print(os.popen("./target/debug/dedup_dataset count-occurrences --data-file %s --query-file /tmp/fin"%(args.suffix)).read())
 else:
-    q = open(args.query_file).read()
     if args.tokenize:
+        q = open(args.query_file).read()
         arr = np.array(tokenizer.encode(q), dtype=np.uint16).view(np.uint8).tobytes()
     else:
-        arr = q.encode('utf-8')
+        arr = open(args.query_file,"rb").read()
     print(arr)
     open("/tmp/fin","wb").write(arr)
     print(os.popen("./target/debug/dedup_dataset count-occurrences --data-file %s --query-file /tmp/fin"%(args.suffix)).read())

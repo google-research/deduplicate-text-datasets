@@ -51,6 +51,9 @@ ds = tfds.load(dataset_name, split=split, shuffle_files=False, batch_size=2**16,
 assert isinstance(ds, tf.data.Dataset)
 print(ds)
 
+pre_sep = args.pre_sep
+post_sep = args.post_sep
+
 UID = 0
 def sep():
     global UID
