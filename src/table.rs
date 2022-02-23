@@ -122,6 +122,7 @@ impl<'s, 't> SuffixTable<'s, 't> {
     /// tends to have lower overhead, so it can be useful when creating lots
     /// of suffix tables for small strings.
     #[doc(hidden)]
+    #[allow(dead_code)]
     pub fn new_naive<S>(text: S) -> SuffixTable<'s, 't>
     where
         S: Into<Cow<'s, [u8]>>,
@@ -140,6 +141,7 @@ impl<'s, 't> SuffixTable<'s, 't> {
     ///
     /// This fails if the number of characters in `text` does not equal the
     /// number of suffixes in `table`.
+    #[allow(dead_code)]
     pub fn from_parts<S, T>(text: S, table: T) -> SuffixTable<'s, 't>
     where
         S: Into<Cow<'s, [u8]>>,
@@ -159,6 +161,7 @@ impl<'s, 't> SuffixTable<'s, 't> {
     }
 
     /// Computes the LCP array.
+    #[allow(dead_code)]
     pub fn lcp_lens(&self) -> Vec<u64> {
         let mut inverse = vec![0u64; self.text.len()];
         for (rank, &sufstart) in self.table().iter().enumerate() {
@@ -185,24 +188,28 @@ impl<'s, 't> SuffixTable<'s, 't> {
     ///
     /// Alternatively, this is the number of *bytes* in the text.
     #[inline]
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.table.len()
     }
 
     /// Returns `true` iff `self.len() == 0`.
     #[inline]
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Returns the suffix at index `i`.
     #[inline]
+    #[allow(dead_code)]
     pub fn suffix(&self, i: usize) -> &[u8] {
         &self.text[self.table[i] as usize..]
     }
 
     /// Returns the suffix bytes starting at index `i`.
     #[inline]
+    #[allow(dead_code)]
     pub fn suffix_bytes(&self, i: usize) -> &[u8] {
         &self.text[self.table[i] as usize..]
     }
@@ -226,6 +233,7 @@ impl<'s, 't> SuffixTable<'s, 't> {
     /// let sa = SuffixTable::new("The quick brown fox.");
     /// assert!(sa.contains("quick"));
     /// ```
+    #[allow(dead_code)]
     pub fn contains(&self, query: &[u8]) -> bool {
         query.len() > 0
             && self
@@ -261,6 +269,7 @@ impl<'s, 't> SuffixTable<'s, 't> {
     /// let sa = SuffixTable::new("The quick brown fox was very quick.");
     /// assert_eq!(sa.positions("quick"), &[4, 29]);
     /// ```
+    #[allow(dead_code)]
     pub fn positions(&self, query: &[u8]) -> &[u64] {
         // We can quickly decide whether the query won't match at all if
         // it's outside the range of suffixes.
@@ -348,6 +357,7 @@ impl<'s, 't> fmt::Debug for SuffixTable<'s, 't> {
 // lcps
 // }
 
+#[allow(dead_code)]
 fn lcp_lens_quadratic(text: &[u8], table: &[u64]) -> Vec<u64> {
     // This is quadratic because there are N comparisons for each LCP.
     // But it is done in constant space.
@@ -362,10 +372,12 @@ fn lcp_lens_quadratic(text: &[u8], table: &[u64]) -> Vec<u64> {
     lcps
 }
 
+#[allow(dead_code)]
 fn lcp_len(a: &[u8], b: &[u8]) -> u64 {
     a.iter().zip(b.iter()).take_while(|(ca, cb)| ca == cb).count() as u64
 }
 
+#[allow(dead_code)]
 fn naive_table(text: &[u8]) -> Vec<u64> {
     assert!(text.len() <= u64::MAX as usize);
     let mut table = vec![0u64; text.len()];
@@ -910,6 +922,7 @@ impl IdxChar for (usize, char) {
 /// Assumes that if `pred(xs[i]) == true` then `pred(xs[i+1]) == true`.
 ///
 /// If all elements yield `pred(T) == false`, then `xs.len()` is returned.
+#[allow(dead_code)]
 fn binary_search<T, F>(xs: &[T], mut pred: F) -> usize
 where
     F: FnMut(&T) -> bool,

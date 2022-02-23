@@ -1,5 +1,7 @@
 # Deduplicating Training Data Makes Language Models Better
 
+WARNING: This is a development branch. I am rewriting the code to be cleaner. Continue at your own risk.
+
 This repository contains code to deduplicate language model datasets as descrbed in the paper ["Deduplicating Training Data Makes Language Models Better"](https://arxiv.org/abs/2107.06499) by Katherine Lee, Daphne Ippolito, Andrew Nystrom, Chiyuan Zhang, Douglas Eck, Chris Callison-Burch and Nicholas Carlini.
 We release the ExactSubstr deduplication implementation (written in Rust) along with the scripts we used in the paper to perform ExactSubstr deduplication and inspect the results (written in Python).
 We also release the document clusters resulting from running NearDup deduplication on C4, RealNews, LM1B, and Wiki-4B-en.
@@ -59,7 +61,7 @@ And then to construct the suffix array run
 
 For example, if you run `python3 scripts/make_suffix_array.py data/lm1b.test`, this will create a file `data/lm1b.test.table.bin` containing the suffix array. Again, this should be fast, about two hours on the LM1B train set when run single-thread and a few minutes on 96 cores.
 
-(If you get an error that you have too many open files, that's because this script opens lots of files. You should run `ulimit -Sn 1000000` to "fix" the error.)
+(If you get an error that you have too many open files, that's because this script opens lots of files. You should run `ulimit -Sn 1000000` to "fix" the error. You might want to do this preemptively before hitting this crash after hour ten of the job.)
 
 ### Querying a suffix array to find duplicated examples
 
@@ -67,12 +69,19 @@ Start by loading and building a suffix array for a dataset as described above
 
 Once you have the suffix array, you now query the dataset to find all occurances of a particular string. To do this, run
 
-```python3 scripts/count_occurances.py --suffix [path/to/suffix_array] [--query query_string] [--query_file /path/to/query]```
+```python3 scripts/count_occurances.py --suffix [path/to/dataset] [--query query_string] [--query_file /path/to/query]```
 
 On the LM1B test set, running `python3 scripts/count_occurances.py --suffix data/lm1b.test --query " on Tuesday" should return 1288. If you tokenized the dataset, then you should pass `--tokenize` to `count_occurences.py` as well, to get the same result (plus or minus tokenization differences).
 
 
 If you want to confirm this the outputted number is correct (assuming you haven't tokenized), you can run `cat /tmp/lm1b.test | grep -ao " on Tuesday"` and get the same result.
+
+## Deduplicating a Dataset
+
+Once you've built the suffix array for a dataset, the next step is to identify all substrings that are repeated within the dataset.
+
+To do this, you can run the command TODO.
+
 
 ## Advanced Usage
 
@@ -136,6 +145,8 @@ Notice that this command also requires that the entire dataset fits in memory. F
 ```cargo run similar_parallel [dataset1] [dataset2]```
 
 This creates lots of containing the position of all examples in dataset2 that are also in dataset1. (The code could also do the inverse at the same time, if you want to modify it slightly.) However it spits this out in some not-very-useful form: a list of tokens x_i so that dataset2[x_i:x_i+100] is also in dataset1. But this probably has overlaps.
+
+TODO describe how this works
 
 The second step is then to run 
 
