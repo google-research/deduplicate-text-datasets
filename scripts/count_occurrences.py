@@ -50,5 +50,5 @@ else:
     else:
         arr = q.encode('utf-8')
     print(arr)
-    open("/tmp/fin","wb").write(arr.tobytes())
+    open("/tmp/fin","wb").write(arr)
     print(os.popen("./target/debug/dedup_dataset count-occurrences --data-file %s --query-file /tmp/fin"%(args.suffix)).read())

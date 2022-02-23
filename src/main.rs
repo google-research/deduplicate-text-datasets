@@ -121,10 +121,12 @@ enum Commands {
     },
 
     AcrossSimilar {
-	#[clap(short, long)]
+	#[clap(long)]
 	data_file_1: String,
-	#[clap(short, long)]
+	#[clap(long)]
 	data_file_2: String,
+	#[clap(short, long)]
+	length_threshold: usize,
 	#[clap(short, long)]
 	cache_dir: String,
 	#[clap(short, long, default_value_t = 8)]
@@ -163,7 +165,7 @@ pub fn to_bytes(input: &[u64]) -> Vec<u8> {
     bytes
 }
 
-/* Convert a uint8 array to a uint64. Only called on small files. */
+/* Convert a uint8 array to a uint64. Only called on (relatively) files. */
 pub fn from_bytes(input: Vec<u8>) -> Vec<u64> {
     println!("S {}", input.len());
     let mut bytes:Vec<u64> = Vec::with_capacity(input.len()/8);
@@ -513,7 +515,8 @@ fn cmd_self_similar(data_file: &String, length_threshold: &usize, frequency_thre
     Ok(())
 }
 
-fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &String, num_threads: i64)  -> std::io::Result<()> {
+fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &String,
+		      length_threshold: usize, num_threads: i64)  -> std::io::Result<()> {
     let text1 = filebuffer::FileBuffer::open(data_file_1).unwrap();
     let text2 = filebuffer::FileBuffer::open(data_file_2).unwrap();
 
@@ -536,7 +539,7 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
 	   start1:usize, end1:usize,
 	   start2:usize, end2:usize,
 	   data_file_1: String, data_file_2: String, 
-	   cache_dir: String) -> usize {
+	   cache_dir: String, length_threshold: usize) -> usize {
 	let mut table1 = make_table(format!("{}.table.bin", data_file_1), start1);
 	let mut location1 = get_next_82(&mut table1);
 
@@ -544,26 +547,26 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
 	let mut location2 = get_next_82(&mut table2);
 
 	// What do you mean this looks ugly. I see no problem here!
-	let mut outfile1 = std::io::BufWriter::new(fs::File::create(
+	let mut outfile2 = std::io::BufWriter::new(fs::File::create(
 	    format!("{}/dups_{}_{}-{}_{}_{}-{}",
 		    cache_dir,
 		    data_file_1.split("/").last().unwrap(), start1, end1,
 		    data_file_2.split("/").last().unwrap(), start2, end2,
 	    )).unwrap());
-	let mut outfile1_sizes = std::io::BufWriter::new(fs::File::create(
+	let mut outfile2_sizes = std::io::BufWriter::new(fs::File::create(
 	    format!("{}/sizes_{}_{}-{}_{}_{}-{}",
 		    cache_dir,
 		    data_file_1.split("/").last().unwrap(), start1, end1,
 		    data_file_2.split("/").last().unwrap(), start2, end2,
 	    )).unwrap());
 
-	let mut outfile2 = std::io::BufWriter::new(fs::File::create(
+	let mut outfile1 = std::io::BufWriter::new(fs::File::create(
 	    format!("{}/dups_{}_{}-{}_{}_{}-{}",
 		    cache_dir,
 		    data_file_2.split("/").last().unwrap(), start2, end2,
 		    data_file_1.split("/").last().unwrap(), start1, end1,
 	    )).unwrap());
-	let mut outfile2_sizes = std::io::BufWriter::new(fs::File::create(
+	let mut outfile1_sizes = std::io::BufWriter::new(fs::File::create(
 	    format!("{}/sizes_{}_{}-{}_{}_{}-{}",
 		    cache_dir,
 		    data_file_2.split("/").last().unwrap(), start2, end2,
@@ -580,14 +583,13 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
 	    let mut suf2 = &text2[location2 as usize..];
 
 
-	    let matchlen = 100;
-	    let does_match = suf1.len() >= matchlen && suf2.len() >= matchlen && suf1[..matchlen] == suf2[..matchlen];
+	    let does_match = suf1.len() >= length_threshold && suf2.len() >= length_threshold && suf1[..length_threshold] == suf2[..length_threshold];
 
 	    if does_match {
 		// We have a match between a subsequence in text1 and text2
-		let target_suf = &suf1[..matchlen]; // wlog. equals suf2[..matchlen]
+		let target_suf = &suf1[..length_threshold]; // wlog. equals suf2[..length_threshold]
 		let start = i;
-		while suf1.len() >= matchlen && &suf1[..matchlen] == target_suf {
+		while suf1.len() >= length_threshold && &suf1[..length_threshold] == target_suf {
 		    outfile2.write_all(&to_bytes(&[location1 as u64][..])[..]).expect("Ok");
 
 		    location1 = get_next_82(&mut table1);
@@ -597,9 +599,7 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
 		outfile1_sizes.write_all(&to_bytes(&[(i-start) as u64][..])[..]).expect("Ok");
 
 		let start = j;
-		while suf2.len() >= matchlen && &suf2[..matchlen] == target_suf {
-		    //outfile.write_all(format!(" {}",location2).as_bytes())
-		    //    .expect("Write ok");
+		while suf2.len() >= length_threshold && &suf2[..length_threshold] == target_suf {
 		    outfile1.write_all(&to_bytes(&[location2 as u64][..])[..]).expect("Ok");
 		    
 		    location2 = get_next_82(&mut table2);
@@ -654,7 +654,8 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
 			   a, b,
 			   this_start, this_end,
 			   data_file_1.clone(), data_file_2.clone(),
-			   cache_dir.clone());
+			   cache_dir.clone(),
+			   length_threshold);
 	    });
 	    result.push(one_result);
 	}
@@ -921,10 +922,11 @@ fn main()  -> std::io::Result<()> {
 	    cmd_self_similar(data_file, length_threshold, frequency_threshold, only_save_one, cache_dir, *num_threads)?;
 	}
 
-        Commands::AcrossSimilar { data_file_1, data_file_2, cache_dir, num_threads } => {
+        Commands::AcrossSimilar { data_file_1, data_file_2, cache_dir, length_threshold, num_threads } => {
 	    cmd_across_similar(data_file_1,
 			       data_file_2,
 			       cache_dir,
+			       *length_threshold,
 			       *num_threads)?;
 	}
 

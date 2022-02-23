@@ -80,11 +80,11 @@ For example, if you run `python3 scripts/make_suffix_array.py data/lm1b.test`, t
 
 Start by loading and building a suffix array for a dataset as described above
 
-Once you have the suffix array, you now query the dataset to find all occurances of a particular string. To do this, run
+Once you have the suffix array, you now query the dataset to find all occurrences of a particular string. To do this, run
 
-```python3 scripts/count_occurances.py --suffix [path/to/dataset] [--query query_string] [--query_file /path/to/query]```
+```python3 scripts/count_occurrences.py --suffix [path/to/dataset] [--query query_string] [--query_file /path/to/query]```
 
-On the LM1B test set, running `python3 scripts/count_occurances.py --suffix data/lm1b.test --query " on Tuesday" should return 1288. If you tokenized the dataset, then you should pass `--tokenize` to `count_occurences.py` as well, to get the same result (plus or minus tokenization differences).
+On the LM1B test set, running `python3 scripts/count_occurrences.py --suffix data/lm1b.test --query " on Tuesday" should return 1288. If you tokenized the dataset, then you should pass `--tokenize` to `count_occurrences.py` as well, to get the same result (plus or minus tokenization differences).
 
 
 If you want to confirm this the outputted number is correct (assuming you haven't tokenized), you can run `cat /tmp/lm1b.test | grep -ao " on Tuesday"` and get the same result.
@@ -104,7 +104,7 @@ The above scripts work by calling into the core Rust suffix array deduplicator. 
 
 To build a suffix array for any particular file, you can run
 
-```cargo run save [file_path]```
+```cargo run make --data-file [file_path]```
 
 This will create a file called `[file_path].table.bin` which contains the suffix array for the file provided. This algorithm is linear time, but (a) only runs on a single core, and (b) has memory requirement `O(big * len(file))` which is prohibitive for large files.
 
@@ -123,7 +123,7 @@ The two steps are described below.
 
 The first generats a suffix array from a piece of a file. This is implemented by running
 
-```cargo run save_part [file_path] [byte_start] [byte_end]```
+```cargo run make_part --data-file [file_path] --start_byte [byte_offset] --end_byte [byte_offset]```
 
 And builds a suffix array for the byte sequence between [byte_start] and [byte_end] for the given file. Multiple of these can be run in parallel to build a suffix array for a file quickly.
 
@@ -131,7 +131,7 @@ And builds a suffix array for the byte sequence between [byte_start] and [byte_e
 
 Given the several independent suffix arrays, merging them is now just a matter of calling
 
-```cargo run merge_parallel [path_to_partial_suffix_trees,...] [tmp_output_directory]```
+```cargo run merge --suffix-path [path_to_partial_suffix_tree] [--suffix-path [another_path_to_partial] ...] -- output-file [tmp_output_directory] --num-threads [number-of-machine-cores]```
 
 to generate a collection of ordered suffix arrays pieces in the output directory. The final step just requires merging these together
 
@@ -140,9 +140,9 @@ to generate a collection of ordered suffix arrays pieces in the output directory
 ### Finding Duplicates
 
 Given a suffix array file, as generated in the prevous section, it can now be queried for interesting statistics.
-The simplest operation, counting occurrences of particular substrings, takes O(log(N)) time and O(query_length) memory requirements, (as shown above with `scripts/count_occurances.py`). To do this you can run:
+The simplest operation, counting occurrences of particular substrings, takes O(log(N)) time and O(query_length) memory requirements, (as shown above with `scripts/count_occurrences.py`). To do this you can run:
 
-```cargo run count_occurances /path/to/dataset /path/to/query_file```
+```cargo run count-occurrences --data-file /path/to/dataset --query-file /path/to/query_file```
 
 (Indeed, the python script is just a wrapper that makes calling this nicer, with the option for tokenization.)
 This is useful mainly as a commandline interface to interact with the dataset to find interesting properties. To run more sophisticated analysis, use the tools described below:
@@ -155,7 +155,7 @@ Once the suffix array for the dataset has been constructed, this algorithm there
 
 Notice that this command also requires that the entire dataset fits in memory. For many datasets this is not a problem, but the C4 dataset is 350 GB and the Pile dataset is 750 GB (both even after tokenization). The machine must therefore have a lot of RAM for this to work.
 
-```cargo run similar_parallel [dataset1] [dataset2]```
+```cargo run across-similar [dataset1] [dataset2]``` TODO
 
 This creates lots of containing the position of all examples in dataset2 that are also in dataset1. (The code could also do the inverse at the same time, if you want to modify it slightly.) However it spits this out in some not-very-useful form: a list of tokens x_i so that dataset2[x_i:x_i+100] is also in dataset1. But this probably has overlaps.
 
@@ -163,13 +163,13 @@ TODO describe how this works
 
 The second step is then to run 
 
-```cargo run collect_similar [dataset2]```. This converts the result to instead compute ranges so that instead we have dataset2[xi:yi] match.
+```cargo run collect [dataset2]```. This converts the result to instead compute ranges so that instead we have dataset2[xi:yi] match. TODO
 
 #### Finding duplicates within one document
 
 To find duplicates that are contained within one document (for example, to actually deduplicate a dataset as we do in the paper) run the command
 
-```cargo run selfsimilar_parallel [dataset]```
+```cargo run self-similar --data-file [path] --length-threshold [bytes] --cache-dir /tmp --num-threads [cpu cores]```
 
 This will find all repeated substrings contained in the dataset above a given length threshold. Again run collect_similar to find the indexs of repeated examples.
 
