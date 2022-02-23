@@ -28,7 +28,8 @@ parser.add_argument('--name', type=str)
 parser.add_argument('--split', type=str)
 parser.add_argument('--tokenize', action='store_true')
 parser.add_argument('--tokenizer', type=str, default="gpt2")
-
+parser.add_argument('--pre_sep', type=bytes, default=b"\xff\xff")
+parser.add_argument('--post_sep', type=bytes, default=b"")
 args = parser.parse_args()
 
 if args.tokenize:
@@ -54,7 +55,7 @@ UID = 0
 def sep():
     global UID
     UID += 1
-    return b"\xff\xff"+struct.pack("<I", UID)
+    return pre_sep+struct.pack("<I", UID)+post_sep
 
 def tok(x):
     if args.tokenize:

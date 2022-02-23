@@ -33,6 +33,19 @@ We provide an implementation of the exact deduplication technique used in the pa
 We build a suffix array (based on [Andrew Gallant's suffix array implementation](https://github.com/BurntSushi/suffix/)) in [src/table.rs](src/table.rs). It has some minor changes from the original version that make it so we can't just import this library as a crate. First, we need 64-bit integers. The original implementation says that u32 works for "reasonably sized documents (~4GB)" but we're working with unreasonably sized documents. So we need u64. Second, we don't want UTF8 strings. Everything is a [u8] byte array, because we might be working over token sequences which aren't valid UTF8.
 The main complication in the rest of [src/main.rs](src/main.rs) is the fact that we want things to run in parallel, and we probably can't fit the entire suffix array into memory. And so all of our algorithms are designed around these constraints.
 
+
+## Version History
+
+Version 0.1.0 was an initial code release that reproduces the paper. The code was terrible.
+
+Version 1.0.0 is complete restructuring of the code. IT IS NOT BACKWARDS COMPATIBLE.
+- The suffix array data structure is basically the only thing that remains unchanged (thanks to Andrew Gallant who actually understood how to write code). You won't need to re-generate the suffix array tables.
+- Every other intermediate data file has changed:
+* TODO
+* TODO
+
+## Installing
+
 If you just want to run the rust deduplicator, then you will only need to install Rust:
 
 ```curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh```

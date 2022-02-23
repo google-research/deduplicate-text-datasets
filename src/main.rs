@@ -46,6 +46,7 @@
  * a nice mix of sane rust and then suddenly OH-NO-WHAT-HAVE-YOU-DONE-WHY!?!)
  */ 
 
+use std::path::Path;
 use std::time::Instant;
 use std::env;
 use std::fs;
@@ -83,12 +84,12 @@ struct Args {
 enum Commands {
     
     #[clap(arg_required_else_help = true)]
-    Save {
+    Make {
 	#[clap(short, long)]
 	data_file: String,
     },
 
-    SavePart {
+    MakePart {
 	#[clap(short, long)]
 	data_file: String,
 	#[clap(short, long)]
@@ -109,7 +110,7 @@ enum Commands {
 	data_file: String,
 	#[clap(short, long)]
 	length_threshold: usize,
-	#[clap(short, long)]
+	#[clap(short, long, default_value_t = 0)]
 	frequency_threshold: usize,
 	#[clap(short, long)]
 	only_save_one: bool,
@@ -132,18 +133,18 @@ enum Commands {
 
     Merge {
 	#[clap(short, long)]
-	suffix_paths: Vec<String>,
+	suffix_path: Vec<String>,
+	#[clap(short, long)]
+	output_file: String,
 	#[clap(short, long, default_value_t = 8)]
 	num_threads: i64,
     },
 
     Collect {
 	#[clap(short, long)]
-	data_file: String,
+	data_name: String,
 	#[clap(short, long)]
 	cache_dir: String,
-	#[clap(short, long, default_value_t = 8)]
-	num_threads: i64,
     }
     
 }
@@ -157,20 +158,7 @@ pub fn to_bytes(input: &[u64]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(8 * input.len());
 
     for value in input {
-            bytes.extend(&value.to_le_bytes());
-    }
-    bytes
-}
-
-/* Convert a uint16 array to a uint8 array.
- * Again, we only call this on datastructures that are smaller than our
- * assumed machine memory.
- */
-pub fn to_bytes_16(input: &[u16]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(2 * input.len());
-
-    for value in input {
-            bytes.extend(&value.to_le_bytes());
+        bytes.extend(&value.to_le_bytes());
     }
     bytes
 }
@@ -181,11 +169,11 @@ pub fn from_bytes(input: Vec<u8>) -> Vec<u64> {
     let mut bytes:Vec<u64> = Vec::with_capacity(input.len()/8);
 
     for i in 0..input.len()/8 {
-	    let b = u64::from_le_bytes(input[i*8..i*8+8].try_into().expect("WAT ERR"));
-            bytes.push(b);
-
+	let b = u64::from_le_bytes(input[i*8..i*8+8].try_into().expect("WAT ERR"));
+        bytes.push(b);
+	
     }
-
+    
     bytes
 }
 
@@ -301,7 +289,7 @@ fn count_occurances(text: &mut File, mut table: &mut BufReader<File>, size: u64,
     return low-start;
 }
 
-fn cmd_save(fpath: &String)   -> std::io::Result<()> {
+fn cmd_build(fpath: &String)   -> std::io::Result<()> {
     /* Create a suffix array for a given file in one go.
      * Calling this method is memory heavy---it's technically linear in the
      * length of the file, but the constant is quite big.
@@ -340,7 +328,7 @@ fn cmd_save(fpath: &String)   -> std::io::Result<()> {
     Ok(())
 }
 
-fn cmd_save_part(fpath: &String, start: u64, end: u64)   -> std::io::Result<()> {
+fn cmd_build_part(fpath: &String, start: u64, end: u64)   -> std::io::Result<()> {
     /* Create a suffix array for a subsequence of bytes.
      * As with save, this method is linear in the number of bytes that are
      * being saved but the constant is rather high. This method does exactly 
@@ -367,8 +355,8 @@ fn cmd_save_part(fpath: &String, start: u64, end: u64)   -> std::io::Result<()> 
     let parts = st.into_parts();
     let table = parts.1;
     
-    let mut buffer = File::create(format!("{}.{}-{}.table.bin", fpath, start, end))?;
-    let mut buffer2 = File::create(format!("{}.{}-{}", fpath, start, end))?;
+    let mut buffer = File::create(format!("{}.part.{}-{}.table.bin", fpath, start, end))?;
+    let mut buffer2 = File::create(format!("{}.part.{}-{}", fpath, start, end))?;
     let bufout = to_bytes(&table);
     println!("Writing the suffix array at time t={}ms", now.elapsed().as_millis());
     buffer.write_all(&bufout)?;
@@ -436,7 +424,9 @@ fn cmd_self_similar(data_file: &String, length_threshold: &usize, frequency_thre
 
     assert!(ratio == 8);
 
-    println!("Loading ratio is {}", ratio);
+    if !Path::new(&cache_dir).exists() {
+	fs::create_dir(cache_dir)?;
+    }
 
     fn sdf(text:&[u8], start:usize, end:usize,
 	   length_threshold: usize, frequency_threshold: usize, only_save_one: bool,
@@ -523,7 +513,7 @@ fn cmd_self_similar(data_file: &String, length_threshold: &usize, frequency_thre
     Ok(())
 }
 
-fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &String)  -> std::io::Result<()> {
+fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &String, num_threads: i64)  -> std::io::Result<()> {
     let text1 = filebuffer::FileBuffer::open(data_file_1).unwrap();
     let text2 = filebuffer::FileBuffer::open(data_file_2).unwrap();
 
@@ -538,6 +528,10 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
     let ratio = metadata2.len()/(text2.len() as u64);
     assert!(ratio == 8);
 
+    if !Path::new(&cache_dir).exists() {
+	fs::create_dir(cache_dir)?;
+    }
+
     fn sdf(text1:&[u8], text2:&[u8],
 	   start1:usize, end1:usize,
 	   start2:usize, end2:usize,
@@ -548,7 +542,8 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
 
 	let mut table2 = make_table(format!("{}.table.bin", data_file_2), start2);
 	let mut location2 = get_next_82(&mut table2);
-	
+
+	// What do you mean this looks ugly. I see no problem here!
 	let mut outfile1 = std::io::BufWriter::new(fs::File::create(
 	    format!("{}/dups_{}_{}-{}_{}_{}-{}",
 		    cache_dir,
@@ -634,14 +629,13 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
     }
 
 
-    let jobs:i64 = 96;
-    let increment:i64 = (text1.len() as i64-jobs)/jobs;
+    let increment:i64 = (text1.len() as i64-num_threads)/num_threads;
     let _answer = crossbeam::scope(|scope| {
-	let mut result = Vec::with_capacity(jobs as usize);
+	let mut result = Vec::with_capacity(num_threads as usize);
 	let text1 = &text1;
 	let text2 = &text2;
 	let mut last_end = 0;
-	for i in 0..jobs {
+	for i in 0..num_threads {
 	    let a = std::cmp::max(0i64,i*increment-1) as usize;
 	    let b = std::cmp::min(((i+1)*increment) as usize, text1.len());
 	    
@@ -672,7 +666,7 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
     Ok(())
 }
 
-fn cmd_merge(data_files: &Vec<String>)  -> std::io::Result<()> {
+fn cmd_merge(data_files: &Vec<String>, output_file: &String, num_threads: i64)  -> std::io::Result<()> {
     /* Merge together M different suffix arrays (probably created with save_part).
      * That is, given strings S_i and suffix arrays A_i compute the suffix array
      * A* = make-suffix-array(concat S_i)
@@ -719,12 +713,12 @@ fn cmd_merge(data_files: &Vec<String>)  -> std::io::Result<()> {
 
     println!("Loading ratio is {}", ratio);
     
-    fn sdf(texts:&Vec<Vec<u8>>, starts:Vec<usize>, ends:Vec<usize>, texts_len:Vec<usize>, part:usize) {
+    fn sdf(texts:&Vec<Vec<u8>>, starts:Vec<usize>, ends:Vec<usize>, texts_len:Vec<usize>, part:usize,
+	   output_file: String, data_files: Vec<String>) {
 
 	let nn = texts.len();
 	let mut tables:Vec<TableStream> = (0..nn).map(|x| {
-	    //std::io::BufReader::new(fs::File::open(env::args().nth(x+2).unwrap() + ".table.bin").unwrap())
-	    make_table(env::args().nth(x+2).unwrap() + ".table.bin", starts[x])
+	    make_table(format!("{}.table.bin", data_files[x]), starts[x])
 	}).collect();
 	
 	let mut idxs:Vec<u64> = starts.iter().map(|&x| x as u64).collect();
@@ -734,8 +728,7 @@ fn cmd_merge(data_files: &Vec<String>)  -> std::io::Result<()> {
 	    pref.iter().sum::<u64>() - (HACKSIZE * x) as u64
 	}).collect();
 
-	let foutpath = env::args().last().unwrap();
-        let mut next_table = std::io::BufWriter::new(File::create(format!("{}.table.bin.{:04}", foutpath.clone(), part)).unwrap());
+        let mut next_table = std::io::BufWriter::new(File::create(format!("{}.table.bin.{:04}", output_file.clone(), part)).unwrap());
 
 	fn get_next_maybe_skip(mut tablestream:&mut TableStream,
 			       index:&mut u64, thresh:usize) -> u64 {
@@ -794,20 +787,19 @@ fn cmd_merge(data_files: &Vec<String>)  -> std::io::Result<()> {
     }
 
 
-    let jobs = 96;
     let _answer = crossbeam::scope(|scope| {
 
 	let mut tables:Vec<BufReader<File>> = (0..nn).map(|x| {
-	    std::io::BufReader::new(fs::File::open(env::args().nth(x+2).unwrap() + ".table.bin").unwrap())
+	    std::io::BufReader::new(fs::File::open(format!("{}.table.bin", data_files[x])).unwrap())
 	}).collect();
 
 	let mut starts = vec![0; nn];
 	
-	for i in 0..jobs {
+	for i in 0..num_threads as usize {
 	    let texts = &texts;
 	    let mut ends: Vec<usize> = vec![0; nn];
-	    if i < jobs-1 {
-		ends[0] = (texts[0].len()+jobs)/jobs*(i+1);
+	    if i < num_threads as usize-1 {
+		ends[0] = (texts[0].len()+(num_threads as usize))/(num_threads as usize)*(i+1);
 		let end_seq = &texts[0][table_load_disk(&mut tables[0], ends[0])..];
 
 		for j in 1..ends.len() {
@@ -835,7 +827,10 @@ fn cmd_merge(data_files: &Vec<String>)  -> std::io::Result<()> {
 		    starts2,
 		    ends2,
 		    texts_len2,
-		    i);
+		    i,
+		    (*output_file).clone(),
+		    (*data_files).clone(),
+		);
 	    });
 
 	    for j in 0..ends.len() {
@@ -845,8 +840,7 @@ fn cmd_merge(data_files: &Vec<String>)  -> std::io::Result<()> {
     });
     
     println!("Finish writing");
-    let foutpath = env::args().last().unwrap();
-    let mut buffer = File::create(foutpath)?;
+    let mut buffer = File::create(output_file)?;
     for i in 0..texts.len()-1 {
         buffer.write_all(&texts[i][..texts[i].len()-HACKSIZE])?;
     }
@@ -910,12 +904,12 @@ fn main()  -> std::io::Result<()> {
 
     
     match &args.command {
-        Commands::Save { data_file } => {
-	    cmd_save(data_file)?;
+        Commands::Make { data_file } => {
+	    cmd_build(data_file)?;
 	}
 
-        Commands::SavePart { data_file, start_byte, end_byte } => {
-	    cmd_save_part(data_file, *start_byte as u64, *end_byte as u64)?;
+        Commands::MakePart { data_file, start_byte, end_byte } => {
+	    cmd_build_part(data_file, *start_byte as u64, *end_byte as u64)?;
 	}
 
         Commands::CountOccurrences { data_file, query_file } => {
@@ -927,18 +921,19 @@ fn main()  -> std::io::Result<()> {
 	    cmd_self_similar(data_file, length_threshold, frequency_threshold, only_save_one, cache_dir, *num_threads)?;
 	}
 
-        Commands::AcrossSimilar { data_file_1, data_file_2, cache_dir } => {
+        Commands::AcrossSimilar { data_file_1, data_file_2, cache_dir, num_threads } => {
 	    cmd_across_similar(data_file_1,
 			       data_file_2,
-			       cache_dir)?;
+			       cache_dir,
+			       *num_threads)?;
 	}
 
-        Commands::Merge { suffix_paths } => {
-	    cmd_merge(suffix_paths)?;
+        Commands::Merge { suffix_path, output_file, num_threads } => {
+	    cmd_merge(suffix_path, output_file, *num_threads)?;
 	}
 
-        Commands::Collect { data_file, cache_dir } => {
-	    cmd_collect(data_file, cache_dir)?;
+        Commands::Collect { data_name, cache_dir } => {
+	    cmd_collect(data_name, cache_dir)?;
 	}
     }
     
