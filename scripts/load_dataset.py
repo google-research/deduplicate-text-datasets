@@ -16,7 +16,7 @@ import tensorflow as tf
 import os
 import struct
 import numpy as np
-from transformers import GPT2Tokenizer
+from transformers import GPT2Tokenizer, T5Tokenizer
 import multiprocessing as mp
 
 import argparse
@@ -27,11 +27,17 @@ parser.add_argument('--save_dir', type=str)
 parser.add_argument('--name', type=str)
 parser.add_argument('--split', type=str)
 parser.add_argument('--tokenize', action='store_true')
+parser.add_argument('--tokenizer', type=str, default="gpt2")
 
 args = parser.parse_args()
 
 if args.tokenize:
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+    if args.tokenizer == 'gpt2':
+        tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+    elif args.tokenizer == 't5':
+        tokenizer = T5Tokenizer.from_pretrained('t5-small')
+    else:
+        raise
 
 split = args.split
 data_dir = args.data_dir
@@ -59,9 +65,12 @@ def tok(x):
     return out
 
 
+if not os.path.exists(save_dir):
+    os.mkdir(save_dir)
+
 fout = open(os.path.join(save_dir, dataset_name+"."+split), "wb")
 
-p = mp.Pool(96)
+p = mp.Pool(mp.cpu_count())
 
 i = 0
 sizes = [0]
