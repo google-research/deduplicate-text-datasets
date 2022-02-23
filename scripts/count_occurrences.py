@@ -16,17 +16,22 @@ import numpy as np
 
 import argparse
 
-parser = argparse.ArgumentParser(description='Count occurances of sequence.')
+parser = argparse.ArgumentParser(description='Count occurrences of sequence.')
 parser.add_argument('--suffix', type=str, required=True)
 parser.add_argument('--query', type=str)
 parser.add_argument('--query_file', type=str)
 parser.add_argument('--tokenize', action='store_true')
+parser.add_argument('--tokenizer', type=str, default="gpt2")
 
 args = parser.parse_args()
 
 if args.tokenize:
-    from transformers import GPT2Tokenizer
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+    if args.tokenizer == 'gpt2':
+        tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+    elif args.tokenizer == 't5':
+        tokenizer = T5Tokenizer.from_pretrained('t5-small')
+    else:
+        raise
 
 assert args.query or args.query_file
 
@@ -37,7 +42,7 @@ if args.query:
         arr = args.query.encode('utf-8')
     print(arr)
     open("/tmp/fin","wb").write(arr)
-    print(os.popen("./target/debug/dedup_dataset count_occurances %s /tmp/fin"%(args.suffix)).read())
+    print(os.popen("./target/debug/dedup_dataset count-occurrences --data-file %s --query-file /tmp/fin"%(args.suffix)).read())
 else:
     q = open(args.query_file).read()
     if args.tokenize:
@@ -46,4 +51,4 @@ else:
         arr = q.encode('utf-8')
     print(arr)
     open("/tmp/fin","wb").write(arr.tobytes())
-    print(os.popen("./target/debug/dedup_dataset count_occurances %s /tmp/fin"%(args.suffix)).read())
+    print(os.popen("./target/debug/dedup_dataset count-occurrences --data-file %s --query-file /tmp/fin"%(args.suffix)).read())
