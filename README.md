@@ -95,6 +95,26 @@ Once you've built the suffix array for a dataset, the next step is to identify a
 
 To do this, you can run the command TODO.
 
+```
+
+
+## A full end-to-end deduplication example
+
+As a demo for how this code works, you can run the following two commands
+
+```
+bash scripts/scripts/run_pipeline.sh
+python3 scripts/finish_dedup_lm1b.py --data_dir ~/tensorflow_datasets/ --save_dir /tmp/dedup --name lm1b --split test --suffixarray_dir /tmp/data --remove /tmp/lm1b.test.remove.byterange
+```
+
+This will run the entire deduplication pipeline top-to-bottom, starting with loading the LM1b test set, then creating a suffix array, finding all repeated sequences, merging them together to sequence ranges, and finally spitting out a deduplicated TFDataSet.
+
+You can verify the deduplication has succeeded by then re-running the pipeline using the resulting output. Instead of finding 28,464 duplicate sequences during the deduplication phase, it should instead find 92. Importantly, you can check that these 92 duplicates are not errors of the pipeline: they are new sequences that are now duplicated when previously they were not. You can check this by running `count-occurrences` in the original dataset for the sequences that (now) have two occcurrences.
+
+Why do we get new duplicates? Consider the following example where we're going to remove all sequences of 4 characters that repeat twice: `e a b c d f g h . e f a b c d g h`. Initially the sequence `a b c d` is repeated twice. So we remove them both, and are now left with the file `e f g h . e f g h`. This file still has duplicates! It's not that the first run failed, it's that in doing the first deduplication, we ended up with more (new) duplicates.
+
+To generate the result of our paper, we ran the deduplicator twice. This often cuts the number of duplicates down by over 100,000x, which in pratice means to ~zero for normal datasets or ~a few hundred for massive 100GB+ datasets.
+
 
 ## Advanced Usage
 
