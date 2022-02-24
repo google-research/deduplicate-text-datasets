@@ -74,7 +74,7 @@ to compile the rust code, and then run
 
 ```python3 scripts/load_dataset.py --data_dir $LOAD_DIR --save_dir $SAVE_DIR --name $DATASET --split $SPLIT [--tokenize]```
 
-For example, to get the LM1B training set you could run `python3 scripts/load_dataset.py --data_dir ~/tensorflow_datasets --save_dir data --name lm1b --split test`. This should will take just a few seconds to run on the test set or about an hour if running with the `train` set instead.
+For example, to get the LM1B training set you could run `python3 scripts/load_dataset.py --data_dir ~/tensorflow_datasets --save_dir data --name lm1b --split test`. This should will take just a minute or so to run on the test set or about an hour if running with the `train` set instead.
 
 If the dataset is really big, you might want to add the `--tokenize` flag. This will shrink the dataset by roughly a factor of two by tokenizing it with the GPT-2 tokenizer.
 
@@ -99,9 +99,9 @@ To do this, run
 
 This should be very fast. Even when you run on a dataset that's 100s of gigabytes, it should take a few seconds, most of which is dominated by Python starting up. The actual core lookup just requires O(log(dataset_size)) time, which often is on the order of ~miliseconds.
 
-On the LM1B test set, running `python3 scripts/count_occurrences.py --suffix data/lm1b.test --query " on Tuesday" should return 1288. If you tokenized the dataset, then you should pass `--tokenize` to `count_occurrences.py` as well, to get the same result (plus or minus tokenization differences).
+On the LM1B test set, running `python3 scripts/count_occurrences.py --suffix data/lm1b.test --query " on Tuesday"` should return 1288. If you tokenized the dataset, then you should pass `--tokenize` to `count_occurrences.py` as well, to get the same result (plus or minus tokenization differences).
 
-If you want to confirm this the outputted number is correct (assuming you haven't tokenized), you can run `cat /tmp/lm1b.test | grep -ao " on Tuesday"` and get the same result.
+If you want to confirm this the outputted number is correct (assuming you haven't tokenized), you can run `cat data/lm1b.test | grep -ao " on Tuesday" | wc -l` and get the same result.
 
 ## Deduplicating a Dataset
 
@@ -113,7 +113,7 @@ Now let's explain how to deduplicate a dataset as we do in the paper. As a runni
 The first step in deduplicating a dataset is identifying all substrings of a given length that are repeated more than some threshold number of times. To do this we run the `self-similar` command:
 
 ```
-cargo run self-similar --data-file /tmp/data/lm1b.test --length-threshold 100 --cache-dir /tmp/cache --num-threads 8
+cargo run self-similar --data-file data/lm1b.test --length-threshold 100 --cache-dir /tmp/cache --num-threads 8
 ```
 
 For larger datasets, you may want to replace num-threads with as many cores as you have on your machine. It parallelizes perfectly, so there's no reason not to. For now though, keep it at 8 just for the sake of keeping things on track with this guide.
@@ -147,9 +147,9 @@ with the second occurrence at location 0x5fa8a9. To confirm this, you can run
 ```
 $ python3
 Python 3.7.3 (default, Jan 22 2021, 20:04:44)
->>> open("/tmp/data/lm1b.test","rb").read()[0x7029a4:0x7029a4+100]
+>>> open("data/lm1b.test","rb").read()[0x7029a4:0x7029a4+100]
 b'\x00\x00The proposal for temporary curbs from the Financial Stability Board will be submitted to leaders o'
->>> open("/tmp/data/lm1b.test","rb").read()[0x5fa8a9:0x5fa8a9+100]
+>>> open("data/lm1b.test","rb").read()[0x5fa8a9:0x5fa8a9+100]
 b'\x00\x00The proposal for temporary curbs from the Financial Stability Board will be submitted to leaders o'
 ```
 
@@ -166,7 +166,7 @@ The current data we have would tag this sequence as being a duplicate 99 times--
 This step reduces that down to just find ranges of bytes [a,b) which are duplicated more than once.
 To do this, run
 ```
-cargo run collect --data-name lm1b.test --cache-dir /tmp/ab1 --length-threshold 100 > /tmp/lm1b.test.remove.byterange
+cargo run collect --data-name lm1b.test --cache-dir /tmp/cache --length-threshold 100 > /tmp/lm1b.test.remove.byterange
 ```
 
 The output here will be a long list of byte pair ranges
@@ -185,7 +185,7 @@ Let's check this.
 ```
 $ python3
 Python 3.7.3 (default, Jan 22 2021, 20:04:44)
->>> data=open("/tmp/data/lm1b.test","rb").read()
+>>> data=open("data/lm1b.test","rb").read()
 >>> data[185290:185564]
 b' to use their wireless phones concurrently to make calls ; send and receive email and text , picture and video messages ; access the Internet; view high-quality videos ; and download music , games and ringtones , while enjoying clearer reception and fewer dropped calls .\xff\xff'
 >>> data.count(data[185290:185564])
@@ -203,7 +203,7 @@ If you're just running this on LM1b, we've provided a script to do this conversi
 To run the LM1b script, you can just run this command
 
 ```
-python3 scripts/finish_dedup_lm1b.py --data_dir ~/tensorflow_datasets/ --save_dir /tmp/dedup --name lm1b --split test --suffixarray_dir /tmp/data --remove /tmp/lm1b.test.remove.byterange
+python3 scripts/finish_dedup_lm1b.py --data_dir ~/tensorflow_datasets/ --save_dir /tmp/dedup --name lm1b --split test --suffixarray_dir data --remove /tmp/lm1b.test.remove.byterange
 ```
 
 You can verify the deduplication has succeeded by then re-running the pipeline using the resulting output. Instead of finding 28,464 duplicate sequences during the deduplication phase, it should instead find 92. Importantly, you can check that these 92 duplicates are not errors of the pipeline: they are new sequences that are now duplicated when previously they were not. You can check this by running `count-occurrences` in the original dataset for the sequences that (now) have two occcurrences.
@@ -221,7 +221,7 @@ Then just do this
 
 ```
 bash scripts/scripts/run_pipeline.sh
-python3 scripts/finish_dedup_lm1b.py --data_dir ~/tensorflow_datasets/ --save_dir /tmp/dedup --name lm1b --split test --suffixarray_dir /tmp/data --remove /tmp/lm1b.test.remove.byterange
+python3 scripts/finish_dedup_lm1b.py --data_dir ~/tensorflow_datasets/ --save_dir /tmp/dedup --name lm1b --split test --suffixarray_dir data --remove /tmp/lm1b.test.remove.byterange
 ```
 
 This will run the entire deduplication pipeline top-to-bottom, starting with loading the LM1b test set, then creating a suffix array, finding all repeated sequences, merging them together to sequence ranges, and finally spitting out a deduplicated TF Dataset that you can use exactly as normal.
@@ -281,7 +281,7 @@ This is useful mainly as a commandline interface to interact with the dataset to
 
 Given a document A and another document B, we can find all duplicates betwen the two by (1) constructing suffix arrays for both, and then (2) linearly walking the suffix arrays in order to find all duplicates of a given length.
 
-Once the suffix array for the dataset has been constructed, this algorithm therefore requires time O(len(dataset) + len(query)) and space O(len(dataset)). It is better to run this algorithm when the number of queries into the dataset is greater than O(len(dataset)/log(len(query))). However note that the prior code requires *disk seeks* and and this implementation is a linear scan through the suffix array table, so in practice there is at least a factor-of-10 speedup here. As a rough order of magnitude, for a dataset with ~100GB, it is faster to run `similar_parallel` when querying with more than a few megabytes of text. Otherwise it is probably faster to run `count_occurances`.
+Once the suffix array for the dataset has been constructed, this algorithm therefore requires time O(len(dataset) + len(query)) and space O(len(dataset)). It is better to run this algorithm when the number of queries into the dataset is greater than O(len(dataset)/log(len(query))). However note that the prior code requires *disk seeks* and and this implementation is a linear scan through the suffix array table, so in practice there is at least a factor-of-10 speedup here. As a rough order of magnitude, for a dataset with ~100GB, it is faster to run `across-similar` (described below) when querying with more than a few megabytes of text. Otherwise it is probably faster to run `count_occurances`.
 
 Notice that this command also requires that the entire dataset fits in memory. For many datasets this is not a problem, but the C4 dataset is 350 GB and the Pile dataset is 750 GB (both even after tokenization). The machine must therefore have a lot of RAM for this to work.
 
