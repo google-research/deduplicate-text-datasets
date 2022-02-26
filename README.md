@@ -46,10 +46,9 @@ Version 0.1.0 was an initial code release that reproduces the paper.
 - You don't want to look at this code unless you're explicitly trying to reproduce our paper.
 
 Version 1.0.0 is complete restructuring of the code. IT IS NOT BACKWARDS COMPATIBLE.
-- The suffix array data structure is basically the only thing that remains unchanged (thanks to Andrew Gallant who actually understood how to write code). You won't need to re-generate the suffix array tables.
-- Every other intermediate data file has changed:
-* TODO
-* TODO
+- The suffix array data structure is basically the only thing that remains unchanged (thanks to Andrew Gallant who actually understood how to write code). You won't need to re-generate the suffix array tables if you upgrade to this version.
+- The rust code now uses argument parsing, instead of relying on the order arguments are passed.
+- The intermediate data files have changed. This shouldn't matter unless you were looking at the internals of the code.
 
 ## Installing
 
@@ -214,7 +213,7 @@ To generate the result of our paper, we ran the deduplicator twice. This often c
 
 
 
-## A full end-to-end deduplication example
+## A full end-to-end dataset deduplication example
 
 Okay so maybe you don't like reading. You skpped the entire section above. (Honestly I don't blame you.) You just want it to run.
 Then just do this
@@ -225,6 +224,15 @@ python3 scripts/finish_dedup_lm1b.py --data_dir ~/tensorflow_datasets/ --save_di
 ```
 
 This will run the entire deduplication pipeline top-to-bottom, starting with loading the LM1b test set, then creating a suffix array, finding all repeated sequences, merging them together to sequence ranges, and finally spitting out a deduplicated TF Dataset that you can use exactly as normal.
+
+## A full end-to-end single file deduplication example
+
+If you have a large single file and want to remove all length-N duplicates from within that file, we also provide the helper script 
+
+```
+bash scripts/scripts/deduplicate_single_file.sh [path/to/source] [path/to/destination]
+```
+
 
 
 ## Advanced Usage
@@ -277,7 +285,7 @@ The simplest operation, counting occurrences of particular substrings, takes O(l
 (Indeed, the python script is just a wrapper that makes calling this nicer, with the option for tokenization.)
 This is useful mainly as a commandline interface to interact with the dataset to find interesting properties. To run more sophisticated analysis, use the tools described below:
 
-#### Finding duplicates between two documents
+#### Finding duplicates between two different documents
 
 Given a document A and another document B, we can find all duplicates betwen the two by (1) constructing suffix arrays for both, and then (2) linearly walking the suffix arrays in order to find all duplicates of a given length.
 
@@ -285,23 +293,25 @@ Once the suffix array for the dataset has been constructed, this algorithm there
 
 Notice that this command also requires that the entire dataset fits in memory. For many datasets this is not a problem, but the C4 dataset is 350 GB and the Pile dataset is 750 GB (both even after tokenization). The machine must therefore have a lot of RAM for this to work.
 
-```cargo run across-similar [dataset1] [dataset2]``` TODO
+```cargo run across-similar --data-file-1 [dataset1] --data-file-2 [dataset2] --length-threshold [num_bytes] --cache-dir [where/to/save] --num-threads [N]```
 
-This creates lots of containing the position of all examples in dataset2 that are also in dataset1. (The code could also do the inverse at the same time, if you want to modify it slightly.) However it spits this out in some not-very-useful form: a list of tokens x_i so that dataset2[x_i:x_i+100] is also in dataset1. But this probably has overlaps.
+This creates files (similar to the self-similar command containing the position of all examples in dataset2 that are also in dataset1, and also at the same time the position of all examples in dataset1 that are also in dataset2. As before, the output is both `dups` files that have the byte offset of where the `length-threshold` duplicates occur, and also `sizes` files that give the sizes of each cluster.
 
-TODO describe how this works
+It's again possible to run
 
-The second step is then to run 
+```cargo run collect --data-name [dataset1 or dataset2]```
 
-```cargo run collect [dataset2]```. This converts the result to instead compute ranges so that instead we have dataset2[xi:yi] match. TODO
+This will write to stdout the byte ranges [a,b) where all tokens in this range are part of an overlap contained in the other document.
 
 #### Finding duplicates within one document
 
 To find duplicates that are contained within one document (for example, to actually deduplicate a dataset as we do in the paper) run the command
 
-```cargo run self-similar --data-file [path] --length-threshold [bytes] --cache-dir /tmp --num-threads [cpu cores]```
+```cargo run self-similar --data-file [path] --length-threshold [bytes] --cache-dir [where/to/save] --num-threads [cpu cores]```
 
-This will find all repeated substrings contained in the dataset above a given length threshold. Again run collect_similar to find the indexs of repeated examples.
+This will find all repeated substrings contained in the dataset above a given length threshold.
+To see how it is used look above where it's called as part of the dataset deduplication process.
+Again run collect_similar to find the indexs of repeated examples.
 
 # Approx Deduplication Results
 
