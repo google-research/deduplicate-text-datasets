@@ -140,7 +140,7 @@ for i,byte_start in enumerate(sizes[:-1]):
     #print(byte_start, byte_end, remove[ptr])
     while ptr < len(remove) and byte_start <= remove[ptr][0] < byte_end:
         #print(remove[ptr])
-        assert remove[ptr][1] < byte_end+4
+        assert remove[ptr][1] < byte_end+6
         # The magic value 6 here corresponds to the 4-byte index prefix followed by \xff\xff.
         remove_ex[i].append((max(int(remove[ptr][0] - byte_start - 6), 0),
                              min(int(remove[ptr][1] - byte_start), byte_end-byte_start)))
