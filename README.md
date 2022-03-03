@@ -38,18 +38,6 @@ We build a suffix array (based on [Andrew Gallant's suffix array implementation]
 The main complication in the rest of [src/main.rs](src/main.rs) is the fact that we want things to run in parallel, and we probably can't fit the entire suffix array into memory. And so all of our algorithms are designed around these constraints.
 
 
-## Version History
-
-Version 0.1.0 was an initial code release that reproduces the paper.
-- The code worked, but was rather terrible.
-- I am sorry if you had to look at it.
-- You don't want to look at this code unless you're explicitly trying to reproduce our paper.
-
-Version 1.0.0 is complete restructuring of the code. IT IS NOT BACKWARDS COMPATIBLE.
-- The suffix array data structure is basically the only thing that remains unchanged (thanks to Andrew Gallant who actually understood how to write code). You won't need to re-generate the suffix array tables if you upgrade to this version.
-- The rust code now uses argument parsing, instead of relying on the order arguments are passed.
-- The intermediate data files have changed. This shouldn't matter unless you were looking at the internals of the code.
-
 ## Installing
 
 To run the rust deduplicator you will need to install Rust:
@@ -312,6 +300,19 @@ To find duplicates that are contained within one document (for example, to actua
 This will find all repeated substrings contained in the dataset above a given length threshold.
 To see how it is used look above where it's called as part of the dataset deduplication process.
 Again run collect_similar to find the indexs of repeated examples.
+
+## Rust Deduplicator Version History
+
+Version 0.1.0 was an initial code release that reproduces the paper.
+- The code worked, but was rather terrible.
+- I am sorry if you had to look at it.
+- You don't want to look at this code unless you're explicitly trying to reproduce our paper.
+
+Version 1.0.0 is complete restructuring of the code. IT IS NOT BACKWARDS COMPATIBLE.
+- The suffix array data structure is basically the only thing that remains unchanged (thanks to Andrew Gallant who actually understood how to write code). You won't need to re-generate the suffix array tables if you upgrade to this version.
+- The rust code now uses argument parsing, instead of relying on the order arguments are passed.
+- The intermediate data files have changed. This shouldn't matter unless you were looking at the internals of the code.
+
 
 # Approx Deduplication Results
 
