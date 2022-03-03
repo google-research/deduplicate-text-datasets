@@ -28,11 +28,10 @@ If you use this repository or our deduplicated datasets you can cite
 # Exact Deduplication Code
 
 We provide an implementation of the exact deduplication technique used in the paper.
-This is very much research code: it works well for what we designed it to do, but probably not much more.
+This is very much research code: it works well for what we designed it to do, and deduplicate text datasets, but it might not directly do what you want it to do.
 We did clean it up fairly significantly for a Vversion 1.0.0 release (see below for release history).
-If you want to deduplicate small (<10GB) datasets, it should work on any modern machine with 16GB of RAM and a few CPUs.
-If you want to deduplicate something the size of C4 (~300GB) you will want a machine with as many cores as you can get (we used 96 cores) and >600GB of RAM. If your machine is big enough, there should be no upper bound on the size of the dataset it can handle (well, 2^64-1 bytes is the limit, but I think we can all agree that's essentially unlimited).
-
+If you want to deduplicate small (<10GB) datasets, it should work on any modern machine with ~16GB of RAM and a few CPU cores. As always, bigger machines are better.
+If you want to deduplicate something the size of C4 (~300GB) you will want a machine with as many cores as you can get (we used 96 cores) and >600GB of RAM. You will also need >1TB hard drive space. If your machine is big enough, there should be no upper bound on the size of the dataset it can handle (well, 2^64-1 bytes is the limit, but I think we can all agree that's essentially unlimited).
 
 We build a suffix array (based on [Andrew Gallant's suffix array implementation](https://github.com/BurntSushi/suffix/)) in [src/table.rs](src/table.rs). It has some minor changes from the original version that make it so we can't just import this library as a crate. First, we need 64-bit integers. The original implementation says that u32 works for "reasonably sized documents (~4GB)" but we're working with unreasonably sized documents. So we need u64. Second, we don't want UTF8 strings. Everything is a [u8] byte array, because we might be working over token sequences which aren't valid UTF8.
 The main complication in the rest of [src/main.rs](src/main.rs) is the fact that we want things to run in parallel, and we probably can't fit the entire suffix array into memory. And so all of our algorithms are designed around these constraints.
@@ -86,7 +85,7 @@ To do this, run
 
 This should be very fast. Even when you run on a dataset that's 100s of gigabytes, it should take a few seconds, most of which is dominated by Python starting up. The actual core lookup just requires O(log(dataset_size)) time, which often is on the order of ~miliseconds.
 
-On the LM1B test set, running `python3 scripts/count_occurrences.py --suffix data/lm1b.test --query " on Tuesday"` should return 1288. If you tokenized the dataset, then you should pass `--tokenize` to `count_occurrences.py` as well, to get the same result (plus or minus tokenization differences).
+On the LM1B test set, running `python3 scripts/count_occurrences.py --suffix data/lm1b.test --query " on Tuesday"` should return 1288. If you tokenized the dataset, then you should pass `--tokenize` to `count_occurrences.py` as well, to get the same result (plus or minus tokenization differences). As an additional datapoint, if you run this on the lm1b *train* set then it should return 130,735.
 
 If you want to confirm this the outputted number is correct (assuming you haven't tokenized), you can run `cat data/lm1b.test | grep -ao " on Tuesday" | wc -l` and get the same result.
 
@@ -95,7 +94,7 @@ If you want to confirm this the outputted number is correct (assuming you haven'
 Now let's explain how to deduplicate a dataset as we do in the paper. As a running example we'll continue with the LM1b test set.
 
 
-### Finding all repeated substrings
+### Finding all repeated substrings within a document
 
 The first step in deduplicating a dataset is identifying all substrings of a given length that are repeated more than some threshold number of times. To do this we run the `self-similar` command:
 
@@ -117,19 +116,22 @@ At this point the deduplicator will have dumped a bunch of files to a cache dire
 - /cache/dups_$DATASET_A-B
 - /cache/sizes_$DATASET_A-B
 
-Each `dups` file is a list of u64 pointers into the dataset that corresponds to sequences repeated multiple times. Each file has the duplicates that correspond to items A through B in the suffix array. There should be 28,464 total entries when added up across all of these files. The duplicates are all clustered together, so all duplicates of the same string should appear sequentiallyp.
+Each `dups` file is a list of pointers into the dataset that corresponds to sequences repeated multiple times. Each file has the duplicates that correspond to items A through B in the suffix array. There should be 28,464 total entries when added up across all of these files. The duplicates are all clustered together, so all duplicates of the same string should appear sequentiallyp.
 
-Each `sizes` file says how large the cluster sizes are, again as a u64. This is typicall a small number.
+Each `sizes` file says how large the cluster sizes are. This is typicall a small number.
+
+All pointers are the same size, but the size of the pointers depends on the size of the dataset. We use the smallest pointer size that coud address the entire dataset. For the LM1B test set, this is a 32-bit pointer. For the training set it would be a 40-bit pointer. For larger documents it might be 48 bits. This helps save memory on disk.
 
 The above explanation might be confusing. Let's see an example. Let's fine the first duplicate in the dataset:
 ```
 $ xxd /tmp/cache/sizes_lm1b.test_0-5444411 | head -n 1
-00000000: 0200 0000 0000 0000 0200 0000 0000 0000  ................
+00000000: 0200 0000 0200 0000 0200 0000 0200 0000  ...............
 $ xxd /tmp/cache/dups_lm1b.test_0-5444411 | head -n 1
-00000000: a429 7000 0000 0000 a9a8 5f00 0000 0000  .)p......._.....
+00000000: a429 7000 a9a8 5f00 eac3 bc00 3e41 6402  .)p..._.....>Ad.
 ```
 
-then this is telling me that the first cluster of duplicates is of size 2, and starts at location 0x7029a4 in the data file,
+Recall these pointers are 32-bit pointers. You can determine this by checking the ratio in size between /tmp/data/lm1b.test and /tmp/data/lm1b.test.table.bin.
+So this says that the first cluster of duplicates is of size 2, and starts at location 0x7029a4 in the data file,
 with the second occurrence at location 0x5fa8a9. To confirm this, you can run
 ```
 $ python3
@@ -220,12 +222,14 @@ python3 scripts/finish_dedup_lm1b.py --data_dir ~/tensorflow_datasets/ --save_di
 
 This will run the entire deduplication pipeline top-to-bottom, starting with loading the LM1b test set, then creating a suffix array, finding all repeated sequences, merging them together to sequence ranges, and finally spitting out a deduplicated TF Dataset that you can use exactly as normal.
 
+Note that this finish script is often the slowest part of the pipeline, depsite doing the least work. I'm sure this is something that could be parallelized or made faster, but it's not an algorithms problem, it's an engineering problem. And that's not particularly fun. If you want to do this and submit a PR we'd gladly take it.
+
 ## A full end-to-end single file deduplication example
 
-If you have a large single file and want to remove all length-N duplicates from within that file, we also provide the helper script 
+If you have a large single file and want to remove all length-N duplicates from within that file, we also provide the helper script here
 
 ```
-bash scripts/scripts/deduplicate_single_file.sh [path/to/source] [path/to/destination]
+bash scripts/scripts/deduplicate_single_file.sh [path/to/source] [path/to/destination] [N] [num_cores]
 ```
 
 

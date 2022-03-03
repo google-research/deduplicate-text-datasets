@@ -273,7 +273,6 @@ fn count_occurances(text: &mut File,
     while low < high {
 	let mid = (high+low)/2;
 	let pos = table_load_disk(&mut table, mid as usize, size_width);
-	println!("{} {}", mid, pos);
 	text.seek(std::io::SeekFrom::Start(pos as u64)).expect ("Seek failed!");
 	text.read_exact(&mut buf).unwrap();
 	if str <= &buf {
