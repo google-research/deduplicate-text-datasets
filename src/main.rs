@@ -847,10 +847,13 @@ fn cmd_merge(data_files: &Vec<String>, output_file: &String, num_threads: i64)  
 	return meta.len();
     }).collect();
 
+    let big_ratio = ((texts_len.sum() as f64).log2()/8.0).ceil() as usize;
+    println!("Ratio: {}", ratio);
+
     let ratio = metadatas[0] / (texts[0].len() as u64);
 
     fn worker(texts:&Vec<Vec<u8>>, starts:Vec<usize>, ends:Vec<usize>, texts_len:Vec<usize>, part:usize,
-	   output_file: String, data_files: Vec<String>, ratio: usize) {
+	   output_file: String, data_files: Vec<String>, ratio: usize, big_ratio: usize) {
 
 	let nn = texts.len();
 	let mut tables:Vec<TableStream> = (0..nn).map(|x| {
@@ -903,8 +906,8 @@ fn cmd_merge(data_files: &Vec<String>, output_file: &String, num_threads: i64)  
 
 	let mut prev = &texts[0][0..];
 	while let Some(MergeState {suffix: _suffix, position, table_index}) = heap.pop() {
-	    // TODO FIX
-	    next_table.write_all(&(position + delta[table_index] as u64).to_le_bytes()).expect("Write OK");
+	    //next_table.write_all(&(position + delta[table_index] as u64).to_le_bytes()).expect("Write OK");
+	    next_table.write_all(&(position + delta[table_index] as u64).to_le_bytes()[..big_ratio]).expect("Write OK");	    
 
 	    let position = get_next_maybe_skip(&mut tables[table_index],
 					       &mut idxs[table_index], texts_len[table_index],);
@@ -988,7 +991,8 @@ fn cmd_merge(data_files: &Vec<String>, output_file: &String, num_threads: i64)  
 		       i,
 		       (*output_file).clone(),
 		       (*data_files).clone(),
-		       ratio as usize
+		       ratio as usize,
+		       big_ratio as usize
 		);
 	    });
 
