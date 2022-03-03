@@ -190,10 +190,17 @@ If you're just running this on LM1b, we've provided a script to do this conversi
 To run the LM1b script, you can just run this command
 
 ```
-python3 scripts/finish_dedup_lm1b.py --data_dir ~/tensorflow_datasets/ --save_dir /tmp/dedup --name lm1b --split test --suffixarray_dir data --remove /tmp/lm1b.test.remove.byterange
+python3 scripts/finish_dedup_lm1b.py --data_dir ~/tensorflow_datasets/ --save_dir /tmp/tfds_lm1b --name lm1b --split test --suffixarray_dir data --remove /tmp/lm1b.test.remove.byterange
 ```
 
+This will create a new directory called `/tmp/tfds_lm1b_dedup`
+
 You can verify the deduplication has succeeded by then re-running the pipeline using the resulting output. Instead of finding 28,464 duplicate sequences during the deduplication phase, it should instead find 92. Importantly, you can check that these 92 duplicates are not errors of the pipeline: they are new sequences that are now duplicated when previously they were not. You can check this by running `count-occurrences` in the original dataset for the sequences that (now) have two occcurrences.
+
+To do this, just re-run everything top-down:
+```
+
+```
 
 Why do we get new duplicates? Consider the following example where we're going to remove all sequences of 4 characters that repeat twice: `e a b c d f g h . e f a b c d g h`. Initially the sequence `a b c d` is repeated twice. So we remove them both, and are now left with the file `e f g h . e f g h`. This file still has duplicates! It's not that the first run failed, it's that in doing the first deduplication, we ended up with more (new) duplicates.
 

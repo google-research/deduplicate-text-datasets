@@ -16,6 +16,7 @@ import os
 import time
 import sys
 import multiprocessing as mp
+import numpy as np
 
 data_size = os.path.getsize(sys.argv[1])
 
@@ -36,7 +37,6 @@ elif data_size > 10e6:
 else:
     total_jobs = 1
     jobs_at_once = 1
-    
 
 S = data_size//total_jobs
 
@@ -63,7 +63,11 @@ while True:
     
     wait = []
     for x,(s,e) in zip(files,started):
-        if not os.path.exists(x) or not os.path.exists(x+".table.bin") or os.path.getsize(x) == 0 or os.path.getsize(x)*8 != os.path.getsize(x+".table.bin"):
+        size_data = os.path.getsize(x)
+        FACT = np.ceil(np.log(size_data)/np.log(2)/8)
+        print("FACT", FACT)
+        size_table = os.path.getsize(x+".table.bin")
+        if not os.path.exists(x) or not os.path.exists(x+".table.bin") or size_table == 0 or size_data*FACT != size_table:
             cmd = "./target/debug/dedup_dataset make-part --data-file %s --start-byte %d --end-byte %d"%(sys.argv[1], s, e)
             print(cmd)
             wait.append(os.popen(cmd))
@@ -77,6 +81,7 @@ while True:
 print("Merging suffix trees")
 
 torun = " --suffix-path ".join(files)
+print("./target/debug/dedup_dataset merge --output-file %s --suffix-path %s --num-threads %d"%("tmp/out.table.bin", torun, mp.cpu_count()))
 os.popen("./target/debug/dedup_dataset merge --output-file %s --suffix-path %s --num-threads %d"%("tmp/out.table.bin", torun, mp.cpu_count())).read()
 #exit(0)
 print("Now merging individual tables")

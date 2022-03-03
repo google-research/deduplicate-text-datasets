@@ -52,7 +52,7 @@ def run(args):
     
     if this_idx in remove_ex:
         for start,end in remove_ex[this_idx][::-1]:
-            print(start,end)
+            #print(start,end)
             row = row[:start] + row[end:]
 
         new_row['text'] = row
@@ -132,7 +132,7 @@ for line in fin:
 
 sizes = np.frombuffer(open(os.path.join(args.suffixarray_dir, args.name+"."+args.split+".size"), "rb").read(), dtype=np.uint64)
 
-print(np.max(sizes))
+#print(np.max(sizes))
 remove_ex = defaultdict(list)
 ptr = 0
 for i,byte_start in enumerate(sizes[:-1]):
