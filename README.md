@@ -43,7 +43,9 @@ To run the rust deduplicator you will need to install Rust:
 
 ```curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh```
 
-If you additionally want to generate datasets to run the rust script on (and you probably do) then you will need python dependencies:
+You'll also need a C compier, `sudo apt-get install gcc` will do that if you don't already.
+
+If you additionally want to generate datasets to run the rust script on (and you probably do, at least to follow this demo) then you will need python dependencies:
 
 ```pip3 install numpy scipy tensorflow tensorflow_datasets transformers sentencepiece```
 
@@ -60,7 +62,11 @@ to compile the rust code, and then run
 
 ```python3 scripts/load_dataset.py --data_dir $LOAD_DIR --save_dir $SAVE_DIR --name $DATASET --split $SPLIT [--tokenize]```
 
-For example, to get the LM1B training set you could run `python3 scripts/load_dataset.py --data_dir ~/tensorflow_datasets --save_dir data --name lm1b --split test`. This should will take just a minute or so to run on the test set or about an hour if running with the `train` set instead.
+For example, to get the LM1B test set (you should do this, to walk through the demo) run
+
+```python3 scripts/load_dataset.py --data_dir ~/tensorflow_datasets --save_dir data --name lm1b --split test```
+
+This should will take just a minute or so to run on the test set or about an hour if running with the `train` set instead.
 
 If the dataset is really big, you might want to add the `--tokenize` flag. This will shrink the dataset by roughly a factor of two by tokenizing it with the GPT-2 tokenizer.
 

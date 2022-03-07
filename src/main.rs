@@ -60,7 +60,6 @@ extern crate filebuffer;
 extern crate zstd;
 extern crate crossbeam;
 extern crate clap;
-extern crate fasthash;
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
