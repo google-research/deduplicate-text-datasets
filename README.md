@@ -30,7 +30,7 @@ If you use this repository or our deduplicated datasets you can cite
 
 We provide an implementation of the exact deduplication technique used in the paper.
 This is very much research code: it works well for what we designed it to do, and deduplicate text datasets, but it might not directly do what you want it to do.
-We did clean it up fairly significantly for a Vversion 1.0.0 release (see below for release history).
+We did clean it up fairly significantly for a Version 1.0.0 release (see below for release history).
 If you want to deduplicate small (<10GB) datasets, it should work on any modern machine with ~16GB of RAM and a few CPU cores. As always, bigger machines are better.
 If you want to deduplicate something the size of C4 (~300GB) you will want a machine with as many cores as you can get (we used 96 cores) and >600GB of RAM. You will also need >1TB hard drive space. If your machine is big enough, there should be no upper bound on the size of the dataset it can handle (well, 2^64-1 bytes is the limit, but I think we can all agree that's essentially unlimited).
 
@@ -128,9 +128,9 @@ At this point the deduplicator will have dumped a bunch of files to a cache dire
 
 Each `dups` file is a list of pointers into the dataset that corresponds to sequences repeated multiple times. Each file has the duplicates that correspond to items A through B in the suffix array. There should be 28,464 total entries when added up across all of these files. The duplicates are all clustered together, so all duplicates of the same string should appear sequentially.
 
-Each `sizes` file says how large the cluster sizes are. This is typicall a small number.
+Each `sizes` file says how large the cluster sizes are. This is typically a small number.
 
-All pointers are the same size, but the size of the pointers depends on the size of the dataset. We use the smallest pointer size that coud address the entire dataset. For the LM1B test set, this is a 32-bit pointer. For the training set it would be a 40-bit pointer. For larger documents it might be 48 bits. This helps save memory on disk.
+All pointers are the same size, but the size of the pointers depends on the size of the dataset. We use the smallest pointer size that could address the entire dataset. For the LM1B test set, this is a 32-bit pointer. For the training set it would be a 40-bit pointer. For larger documents it might be 48 bits. This helps save memory on disk.
 
 The above explanation might be confusing. Let's see an example. Let's fine the first duplicate in the dataset:
 ```
@@ -160,7 +160,7 @@ This is a fairly boring and benign duplicate, but it's definitely correct.
 
 The next step is to take all of the length-100 sequences we've found and collect them together to figure out what we should be removing from our dataset.
 To see why this is necessary, imagine that we have a length-200 sequence that's repeated more than once.
-The current data we have would tag this sequence as being a duplicate 99 times---once for each initial byte where a match occurrs.
+The current data we have would tag this sequence as being a duplicate 99 times---once for each initial byte where a match occurs.
 
 This step reduces that down to just find ranges of bytes [a,b) which are duplicated more than once.
 To do this, run
@@ -199,7 +199,7 @@ b'% from other races, and 0.9% from two or more races. Hispanic or Latino of any
 ```
 
 Okay so what's going on here? The first of these look like it's repeated just once (but the second looks correct).
-Well if you actually check what we're saying here is the following: every byte contained in the range 41887 to 41999 is a memeber of at least one length-100 duplicate match.
+Well if you actually check what we're saying here is the following: every byte contained in the range 41887 to 41999 is a member of at least one length-100 duplicate match.
 So while the whole sequence isn't repeated, the sub-sequences are. So for example:
 
 ```
@@ -211,7 +211,7 @@ So while the whole sequence isn't repeated, the sub-sequences are. So for exampl
 
 In our paper we suggest just taking all of these duplicate sequences that have been identified and completely striking them from the dataset.
 This somewhat breaks the flow of text, for example if previously had an example "Alice wanted to go to the store" and we deduplicated at the level of 10 characters, we might completely strike " to go to the " and be left with "Alice wantedstore".
-In practice we have found this doesn't break the language model because we removely relatively little text, and so these breaks don't cause harm.
+In practice we have found this doesn't break the language model because we remove relatively little text, and so these breaks don't cause harm.
 
 How exactly how you write out a dataset that's been deduplicated depends on the format the dataset started as.
 If you're just running this on wiki40b, we've provided a script to do this conversion for you which will output another valid TensorFlow Dataset directory. But if you're using some other dataset, this is the part you'll have to take over and write the rest.
@@ -224,7 +224,7 @@ python3 scripts/finish_dedup_wiki40b.py --data_dir ~/tensorflow_datasets/ --save
 
 This will create a new directory called `/tmp/tfds_wiki40b_dedup`, and will take a few minutes to process completely.
 
-You can verify the deduplication has succeeded by then re-running the pipeline using the resulting output. Instead of finding 3,374,227 duplicate sequences during the deduplication phase, it should instead find 374. Importantly, you can check that these 374 duplicates are not errors of the pipeline: they are new sequences that are now duplicated when previously they were not. You can check this by running `count-occurrences` in the original dataset for the sequences that (now) have two occcurrences.
+You can verify the deduplication has succeeded by then re-running the pipeline using the resulting output. Instead of finding 3,374,227 duplicate sequences during the deduplication phase, it should instead find 374. Importantly, you can check that these 374 duplicates are not errors of the pipeline: they are new sequences that are now duplicated when previously they were not. You can check this by running `count-occurrences` in the original dataset for the sequences that (now) have two occurrences.
 
 To do this, just re-run everything top-down:
 ```
@@ -241,13 +241,13 @@ Duplicates found: 374
 
 Why do we get new duplicates? Consider the following example where we're going to remove all sequences of 4 characters that repeat twice: `e a b c d f g h . e f a b c d g h`. Initially the sequence `a b c d` is repeated twice. So we remove them both, and are now left with the file `e f g h . e f g h`. This file still has duplicates! It's not that the first run failed, it's that in doing the first deduplication, we ended up with more (new) duplicates.
 
-To generate the result of our paper, we ran the deduplicator twice. This often cuts the number of duplicates down by over 100,000x, which in pratice means to ~zero for normal datasets or ~a few hundred for massive 100GB+ datasets.
+To generate the result of our paper, we ran the deduplicator twice. This often cuts the number of duplicates down by over 100,000x, which in practice means to ~zero for normal datasets or ~a few hundred for massive 100GB+ datasets.
 
 
 
 ## A full end-to-end dataset deduplication example
 
-Okay so maybe you don't like reading. You skpped the entire section above. (Honestly I don't blame you.) You just want it to run.
+Okay so maybe you don't like reading. You skipped the entire section above. (Honestly I don't blame you.) You just want it to run.
 Then just do this
 
 ```
@@ -293,7 +293,7 @@ The two steps are described below.
 
 #### Building a piece of a suffix array from a piece of a file
 
-The first generats a suffix array from a piece of a file. This is implemented by running
+The first generates a suffix array from a piece of a file. This is implemented by running
 
 ```cargo run make_part --data-file [file_path] --start_byte [byte_offset] --end_byte [byte_offset]```
 
@@ -311,7 +311,7 @@ to generate a collection of ordered suffix arrays pieces in the output directory
 
 ### Finding Duplicates
 
-Given a suffix array file, as generated in the prevous section, it can now be queried for interesting statistics.
+Given a suffix array file, as generated in the previous section, it can now be queried for interesting statistics.
 The simplest operation, counting occurrences of particular substrings, takes O(log(N)) time and O(query_length) memory requirements, (as shown above with `scripts/count_occurrences.py`). To do this you can run:
 
 ```cargo run count-occurrences --data-file /path/to/dataset --query-file /path/to/query_file```
@@ -321,7 +321,7 @@ This is useful mainly as a commandline interface to interact with the dataset to
 
 #### Finding duplicates between two different documents
 
-Given a document A and another document B, we can find all duplicates betwen the two by (1) constructing suffix arrays for both, and then (2) linearly walking the suffix arrays in order to find all duplicates of a given length.
+Given a document A and another document B, we can find all duplicates between the two by (1) constructing suffix arrays for both, and then (2) linearly walking the suffix arrays in order to find all duplicates of a given length.
 
 Once the suffix array for the dataset has been constructed, this algorithm therefore requires time O(len(dataset) + len(query)) and space O(len(dataset)). It is better to run this algorithm when the number of queries into the dataset is greater than O(len(dataset)/log(len(query))). However note that the prior code requires *disk seeks* and and this implementation is a linear scan through the suffix array table, so in practice there is at least a factor-of-10 speedup here. As a rough order of magnitude, for a dataset with ~100GB, it is faster to run `across-similar` (described below) when querying with more than a few megabytes of text. Otherwise it is probably faster to run `count_occurances`.
 
@@ -355,9 +355,11 @@ Version 0.1.0 was an initial code release that reproduces the paper.
 - You don't want to look at this code unless you're explicitly trying to reproduce our paper.
 
 Version 1.0.0 is complete restructuring of the code. IT IS NOT BACKWARDS COMPATIBLE.
-- The suffix array data structure is basically the only thing that remains unchanged (thanks to Andrew Gallant who actually understood how to write code). You won't need to re-generate the suffix array tables if you upgrade to this version.
-- The rust code now uses argument parsing, instead of relying on the order arguments are passed.
-- The intermediate data files have changed. This shouldn't matter unless you were looking at the internals of the code.
+- The suffix array data structure is basically the only thing that remains unchanged (thanks to Andrew Gallant who actually understood how to write code). You won't need to re-generate the suffix array tables if you upgrade from 0.1 to 1.0.
+- The rust code now uses argument parsing, instead of relying on the order arguments are passed. So the CLI interface has changed.
+- Added one-line scripts to deduplicate a single file, or a TFDS dataset.
+- The intermediate data files have changed. This shouldn't matter unless you were looking at the internals of the code. If you were, then you *will* need to re-generate intermediate data files
+- The code is not entirely terrible to read, and has comments.
 
 
 # Approx Deduplication Results
