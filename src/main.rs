@@ -53,7 +53,6 @@ use std::io::Read;
 use std::io::BufReader;
 use std::fs::File;
 use std::io::prelude::*;
-use std::convert::TryInto;
 use std::cmp::Reverse;
 
 extern crate filebuffer;
@@ -230,7 +229,7 @@ fn make_table(path: std::string::String,
 }
 
 /* Get the next word from the suffix table. */
-fn get_next_pointer_from_table_canfail(mut tablestream:&mut TableStream) -> u64 {
+fn get_next_pointer_from_table_canfail(tablestream:&mut TableStream) -> u64 {
     let ok = tablestream.file.read_exact(&mut tablestream.cache[..tablestream.size_width]);
     let bad = match ok {
 	Ok(_) => false,
@@ -244,7 +243,7 @@ fn get_next_pointer_from_table_canfail(mut tablestream:&mut TableStream) -> u64 
 }
 
 
-fn get_next_pointer_from_table(mut tablestream:&mut TableStream) -> u64 {
+fn get_next_pointer_from_table(tablestream:&mut TableStream) -> u64 {
     let r = get_next_pointer_from_table_canfail(tablestream);
     if r == std::u64::MAX {
 	panic!("Reached EOF badly");
