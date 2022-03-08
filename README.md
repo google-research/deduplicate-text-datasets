@@ -17,11 +17,12 @@ Training models on deduplicated datasets is faster (because they see fewer total
 If you use this repository or our deduplicated datasets you can cite
 
 ```
-@article{lee2021deduplicating,
+@inproceedings{lee2021deduplicating,
       title={Deduplicating Training Data Makes Language Models Better}, 
       author={Katherine Lee and Daphne Ippolito and Andrew Nystrom and Chiyuan Zhang and Douglas Eck and Chris Callison-Burch and Nicholas Carlini},
-      journal={arXiv preprint arXiv:2107.06499},
-      year={2021},
+    booktitle = "Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics",
+    year = "2022",
+    publisher = "Association for Computational Linguistics"
 }
 ```
 
@@ -62,24 +63,27 @@ to compile the rust code, and then run
 
 ```python3 scripts/load_dataset.py --data_dir $LOAD_DIR --save_dir $SAVE_DIR --name $DATASET --split $SPLIT [--tokenize]```
 
-For example, to get the LM1B test set (you should do this, to walk through the demo) run
+For example, to get the Wik40B test set (you should do this, to walk through the demo) run
 
-```python3 scripts/load_dataset.py --data_dir ~/tensorflow_datasets --save_dir data --name lm1b --split test```
+```python3 scripts/load_dataset.py --data_dir ~/tensorflow_datasets --save_dir data --name wiki40b --split test```
 
-This should will take just a minute or so to run on the test set or about an hour if running with the `train` set instead.
+This should will take just a minute or so to run on the test set.
 
 If the dataset is really big, you might want to add the `--tokenize` flag. This will shrink the dataset by roughly a factor of two by tokenizing it with the GPT-2 tokenizer.
 
-This will create a file that's called `data/lm1b.test` and `data/lm1b.test.size`.
-The first file contains the entire LM1b test set smashed together, and the second file has the byte offset of where each individual training example begins, in sorted order.
+This will create a file that's called `data/wiki40b.test` and `data/wiki40b.test.size`.
+The first file contains the entire Wiki40B test set smashed together, and the second file has the byte offset of where each individual training example begins, in sorted order.
 
 From here we can now build a suffix array of this entire dataset that's now in a single file.
 
 ```python3 scripts/make_suffix_array.py [path/to/dataset]```
 
-For example, if you run `python3 scripts/make_suffix_array.py data/lm1b.test`, this will create a file `data/lm1b.test.table.bin` containing the suffix array. Again, this should be fast. The test set should process in just a few seconds. Or if you're running on the LM1b train set, it will take about two hours when run single-thread and a few minutes on 96 cores.
+For example, if you run (you should do this to follow along!)
+```python3 scripts/make_suffix_array.py data/wiki40b.test```
 
-(If you get an error that you have too many open files, that's because this script opens lots of files. You should run `ulimit -Sn 1000000` to "fix" the error. You might want to do this preemptively before hitting this crash after hour ten of the job.)
+This will create a file `data/wiki40b.test.table.bin` containing the suffix array. Again, this should be fast. The test set should process in about a minute.
+
+(When running on larger files, if you get an error that you have too many open files, that's because this script opens lots of files. You should run `ulimit -Sn 1000000` to "fix" the error. You might want to do this preemptively before hitting this crash after hour ten of the job.)
 
 ### Querying a suffix array to find duplicated examples
 
@@ -91,9 +95,9 @@ To do this, run
 
 This should be very fast. Even when you run on a dataset that's 100s of gigabytes, it should take a few seconds, most of which is dominated by Python starting up. The actual core lookup just requires O(log(dataset_size)) time, which often is on the order of ~miliseconds.
 
-On the LM1B test set, running `python3 scripts/count_occurrences.py --suffix data/lm1b.test --query " on Tuesday"` should return 1288. If you tokenized the dataset, then you should pass `--tokenize` to `count_occurrences.py` as well, to get the same result (plus or minus tokenization differences). As an additional datapoint, if you run this on the lm1b *train* set then it should return 130,735.
+On the LM1B test set, running `python3 scripts/count_occurrences.py --suffix data/wiki40b.test --query " on Tuesday"` should return 289. If you tokenized the dataset, then you should pass `--tokenize` to `count_occurrences.py` as well, to get the same result (plus or minus tokenization differences).
 
-If you want to confirm this the outputted number is correct (assuming you haven't tokenized), you can run `cat data/lm1b.test | grep -ao " on Tuesday" | wc -l` and get the same result.
+If you want to confirm this the outputted number is correct (assuming you haven't tokenized), you can run `cat data/wiki40b.test | grep -ao " on Tuesday" | wc -l` and get the same result (slower).
 
 ## Deduplicating a Dataset
 
@@ -105,24 +109,24 @@ Now let's explain how to deduplicate a dataset as we do in the paper. As a runni
 The first step in deduplicating a dataset is identifying all substrings of a given length that are repeated more than some threshold number of times. To do this we run the `self-similar` command:
 
 ```
-cargo run self-similar --data-file data/lm1b.test --length-threshold 100 --cache-dir /tmp/cache --num-threads 8
+cargo run self-similar --data-file data/wiki40b.test --length-threshold 100 --cache-dir /tmp/cache --num-threads 8
 ```
 
 For larger datasets, you may want to replace num-threads with as many cores as you have on your machine. It parallelizes perfectly, so there's no reason not to. For now though, keep it at 8 just for the sake of keeping things on track with this guide.
 
-This will probably end by saying something like
+The output of this should be the string
 
 ```
-Duplicates found: 28464
+Duplicates found: 3374227
 ```
 
-This means that the deduplicator found 28,464 sequences of length 100 that existed somewhere else in the dataset. The length threshold here is entirely dataset-dependent. In our paper, we used 50 tokens (which is 100 bytes---so remember that if you pass --tokenize you'll need to double the number of bytes for the length threshold).
+This means that the deduplicator found 3,374,227 sequences of length 100 that existed somewhere else in the dataset. The length threshold here is entirely dataset-dependent. In our paper, we used 50 tokens (which is 100 bytes---so remember that if you pass --tokenize you'll need to double the number of bytes for the length threshold).
 
 At this point the deduplicator will have dumped a bunch of files to a cache directory. There are two kinds of files here
 - /cache/dups_$DATASET_A-B
 - /cache/sizes_$DATASET_A-B
 
-Each `dups` file is a list of pointers into the dataset that corresponds to sequences repeated multiple times. Each file has the duplicates that correspond to items A through B in the suffix array. There should be 28,464 total entries when added up across all of these files. The duplicates are all clustered together, so all duplicates of the same string should appear sequentiallyp.
+Each `dups` file is a list of pointers into the dataset that corresponds to sequences repeated multiple times. Each file has the duplicates that correspond to items A through B in the suffix array. There should be 28,464 total entries when added up across all of these files. The duplicates are all clustered together, so all duplicates of the same string should appear sequentially.
 
 Each `sizes` file says how large the cluster sizes are. This is typicall a small number.
 
@@ -130,25 +134,25 @@ All pointers are the same size, but the size of the pointers depends on the size
 
 The above explanation might be confusing. Let's see an example. Let's fine the first duplicate in the dataset:
 ```
-$ xxd /tmp/cache/sizes_lm1b.test_0-5444411 | head -n 1
-00000000: 0200 0000 0200 0000 0200 0000 0200 0000  ...............
-$ xxd /tmp/cache/dups_lm1b.test_0-5444411 | head -n 1
-00000000: a429 7000 a9a8 5f00 eac3 bc00 3e41 6402  .)p..._.....>Ad.
+$ xxd /tmp/cache/sizes_wiki40b.test_0-64596445 | head -n 1 
+00000000: 0200 0000 0200 0000 0200 0000 0200 0000  ................
+$ xxd /tmp/cache/dups_wiki40b.test_0-64596445 | head -n 1 
+00000000: daa4 ae05 8c7a 8505 c7a4 ae05 797a 8505  .....z......yz
 ```
 
 Recall these pointers are 32-bit pointers. You can determine this by checking the ratio in size between /tmp/data/lm1b.test and /tmp/data/lm1b.test.table.bin.
-So this says that the first cluster of duplicates is of size 2, and starts at location 0x7029a4 in the data file,
-with the second occurrence at location 0x5fa8a9. To confirm this, you can run
+So this says that the first cluster of duplicates is of size 2, and starts at location 0x05aea4da in the data file,
+with the second occurrence at location 0x05857a8c. To confirm this, you can run
 ```
 $ python3
-Python 3.7.3 (default, Jan 22 2021, 20:04:44)
->>> open("data/lm1b.test","rb").read()[0x7029a4:0x7029a4+100]
-b'\x00\x00The proposal for temporary curbs from the Financial Stability Board will be submitted to leaders o'
->>> open("data/lm1b.test","rb").read()[0x5fa8a9:0x5fa8a9+100]
-b'\x00\x00The proposal for temporary curbs from the Financial Stability Board will be submitted to leaders o'
+>>> open("data/wiki40b.test","rb").read()[0x05aea4da:0x05aea4da+100]
+b'\n        \n          t\n          \n            0\n          \n        \n        ,\n        \n          t\n  '
+>>> open("data/wiki40b.test","rb").read()[0x05857a8c:0x05857a8c+100]
+b'\n        \n          t\n          \n            0\n          \n        \n        ,\n        \n          t\n  '
 ```
 
 And we've confirmed that this example is correctly identified twice in the dataset.
+This is a fairly boring and benign duplicate, but it's definitely correct.
 (Exercise for the reader: how would you count how many times this string is repeated in the dataset? It should be twice. Can you check that?)
 
 
@@ -161,53 +165,78 @@ The current data we have would tag this sequence as being a duplicate 99 times--
 This step reduces that down to just find ranges of bytes [a,b) which are duplicated more than once.
 To do this, run
 ```
-cargo run collect --data-name lm1b.test --cache-dir /tmp/cache --length-threshold 100 > /tmp/lm1b.test.remove.byterange
+cargo run collect --data-file data/wiki40b.test --cache-dir /tmp/cache --length-threshold 100 > /tmp/wiki40b.test.remove.byterange
 ```
 
 The output here will be a long list of byte pair ranges
 ```
 ...
 out
-185290 185564
-424048 424148
-482724 482824
-534604 534716
+41887 41999
+42347 42479
+42507 42715
+42741 42931
+43101 43315
+43891 43993
+44021 44220
+44366 44604
 ...
 ```
 
-What this means is that the substring in the dataset from byte 185290 to byte 185564 is repeated more than once and should be removed.
+What this means is that the substring in the dataset from byte 41887 to byte 41999 is repeated more than once and should be removed, as should the data from bytes 42347 to 42479 and so on.
 Let's check this.
 ```
 $ python3
-Python 3.7.3 (default, Jan 22 2021, 20:04:44)
->>> data=open("data/lm1b.test","rb").read()
->>> data[185290:185564]
-b' to use their wireless phones concurrently to make calls ; send and receive email and text , picture and video messages ; access the Internet; view high-quality videos ; and download music , games and ringtones , while enjoying clearer reception and fewer dropped calls .\xff\xff'
->>> data.count(data[185290:185564])
+>>> data=open("data/wiki40b.test","rb").read()
+>>> data[41887:41999]
+b'8\xc2\xa0km\xc2\xb2), all of it land.\n_START_SECTION_\n2010 census\n_START_PARAGRAPH_\nAs of the census of 2010, there were 2,5'
+>>> data.count(data[41887:41999])
+1 ## WHAT??? See below
+>>> data[42347:42479]
+b'% from other races, and 0.9% from two or more races. Hispanic or Latino of any race were 2.5% of the population._NEWLINE_There were '
+>>> data.count(data[42347:42479])
 2
 ```
 
-Looks great! Now that we have this file, we can go back and actually deduplicate the dataset.
+Okay so what's going on here? The first of these look like it's repeated just once (but the second looks correct).
+Well if you actually check what we're saying here is the following: every byte contained in the range 41887 to 41999 is a memeber of at least one length-100 duplicate match.
+So while the whole sequence isn't repeated, the sub-sequences are. So for example:
+
+```
+>>> data.count(data[41887:41887+100])
+9
+>>> data.count(data[41999-100:41999])
+2
+```
+
 In our paper we suggest just taking all of these duplicate sequences that have been identified and completely striking them from the dataset.
 This somewhat breaks the flow of text, for example if previously had an example "Alice wanted to go to the store" and we deduplicated at the level of 10 characters, we might completely strike " to go to the " and be left with "Alice wantedstore".
 In practice we have found this doesn't break the language model because we removely relatively little text, and so these breaks don't cause harm.
 
 How exactly how you write out a dataset that's been deduplicated depends on the format the dataset started as.
-If you're just running this on LM1b, we've provided a script to do this conversion for you which will output another valid TensorFlow Dataset directory. But if you're using some other dataset, this is the part you'll have to take over and write the rest.
+If you're just running this on wiki40b, we've provided a script to do this conversion for you which will output another valid TensorFlow Dataset directory. But if you're using some other dataset, this is the part you'll have to take over and write the rest.
 
-To run the LM1b script, you can just run this command
+To run the wiki40b script, you can just run this command
 
 ```
-python3 scripts/finish_dedup_lm1b.py --data_dir ~/tensorflow_datasets/ --save_dir /tmp/tfds_lm1b --name lm1b --split test --suffixarray_dir data --remove /tmp/lm1b.test.remove.byterange
+python3 scripts/finish_dedup_wiki40b.py --data_dir ~/tensorflow_datasets/ --save_dir /tmp/tfds_wiki40b --name wiki40b --split test --suffixarray_dir data --remove /tmp/wiki40b.test.remove.byterange
 ```
 
-This will create a new directory called `/tmp/tfds_lm1b_dedup`
+This will create a new directory called `/tmp/tfds_wiki40b_dedup`, and will take a few minutes to process completely.
 
-You can verify the deduplication has succeeded by then re-running the pipeline using the resulting output. Instead of finding 28,464 duplicate sequences during the deduplication phase, it should instead find 92. Importantly, you can check that these 92 duplicates are not errors of the pipeline: they are new sequences that are now duplicated when previously they were not. You can check this by running `count-occurrences` in the original dataset for the sequences that (now) have two occcurrences.
+You can verify the deduplication has succeeded by then re-running the pipeline using the resulting output. Instead of finding 3,374,227 duplicate sequences during the deduplication phase, it should instead find 374. Importantly, you can check that these 374 duplicates are not errors of the pipeline: they are new sequences that are now duplicated when previously they were not. You can check this by running `count-occurrences` in the original dataset for the sequences that (now) have two occcurrences.
 
 To do this, just re-run everything top-down:
 ```
+python3 scripts/load_dataset.py --data_dir /tmp/tfds_wiki40b_dedup --save_dir data_dedup --name wiki40b --split test
+python3 scripts/make_suffix_array.py data_dedup/wiki40b.test
+cargo run self-similar --data-file data/wiki40b.test --length-threshold 100 --cache-dir /tmp/cache --num-threads 8
+```
 
+and observe the output
+
+```
+Duplicates found: 374
 ```
 
 Why do we get new duplicates? Consider the following example where we're going to remove all sequences of 4 characters that repeat twice: `e a b c d f g h . e f a b c d g h`. Initially the sequence `a b c d` is repeated twice. So we remove them both, and are now left with the file `e f g h . e f g h`. This file still has duplicates! It's not that the first run failed, it's that in doing the first deduplication, we ended up with more (new) duplicates.
@@ -223,10 +252,10 @@ Then just do this
 
 ```
 bash scripts/scripts/run_pipeline.sh
-python3 scripts/finish_dedup_lm1b.py --data_dir ~/tensorflow_datasets/ --save_dir /tmp/dedup --name lm1b --split test --suffixarray_dir data --remove /tmp/lm1b.test.remove.byterange
+python3 scripts/finish_dedup_wiki40b.py --data_dir ~/tensorflow_datasets/ --save_dir /tmp/dedup --name wiki40b --split test --suffixarray_dir data --remove /tmp/wiki40b.test.remove.byterange
 ```
 
-This will run the entire deduplication pipeline top-to-bottom, starting with loading the LM1b test set, then creating a suffix array, finding all repeated sequences, merging them together to sequence ranges, and finally spitting out a deduplicated TF Dataset that you can use exactly as normal.
+This will run the entire deduplication pipeline top-to-bottom, starting with loading the wiki40b test set, then creating a suffix array, finding all repeated sequences, merging them together to sequence ranges, and finally spitting out a deduplicated TF Dataset that you can use exactly as normal.
 
 Note that this finish script is often the slowest part of the pipeline, depsite doing the least work. I'm sure this is something that could be parallelized or made faster, but it's not an algorithms problem, it's an engineering problem. And that's not particularly fun. If you want to do this and submit a PR we'd gladly take it.
 
@@ -235,7 +264,7 @@ Note that this finish script is often the slowest part of the pipeline, depsite 
 If you have a large single file and want to remove all length-N duplicates from within that file, we also provide the helper script here
 
 ```
-bash scripts/scripts/deduplicate_single_file.sh [path/to/source] [path/to/destination] [N] [num_cores]
+bash scripts/deduplicate_single_file.sh [path/to/source] [path/to/destination] [dup_length_threshold] [num_cores]
 ```
 
 

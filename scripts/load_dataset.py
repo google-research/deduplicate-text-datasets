@@ -74,20 +74,19 @@ if not os.path.exists(save_dir):
 
 fout = open(os.path.join(save_dir, dataset_name+"."+split), "wb")
 
-p = mp.Pool(mp.cpu_count())
-
-i = 0
-sizes = [0]
-for b in ds:
-    print(i)
-
-    text = b['text'].numpy()
-    text = p.map(tok,text)
+with mp.Pool(mp.cpu_count()) as p:
+    i = 0
+    sizes = [0]
+    for b in ds:
+        print(i)
     
-    for x in text:
-        next_line = sep()+x
-        fout.write(next_line)
-        sizes.append(sizes[-1]+len(next_line))
-    i += 1
+        text = b['text'].numpy()
+        text = p.map(tok,text)
+        
+        for x in text:
+            next_line = sep()+x
+            fout.write(next_line)
+            sizes.append(sizes[-1]+len(next_line))
+        i += 1
 
 open(os.path.join(save_dir,dataset_name+"."+split+".size"), "wb").write(np.array(sizes,dtype=np.uint64).tobytes())
