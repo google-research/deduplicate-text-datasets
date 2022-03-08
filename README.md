@@ -44,7 +44,7 @@ To run the rust deduplicator you will need to install Rust:
 
 ```curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh```
 
-You'll also need a C compier, `sudo apt-get install gcc` will do that if you don't already.
+You'll also need a C compiler, `sudo apt-get install gcc` will do that if you don't already.
 
 If you additionally want to generate datasets to run the rust script on (and you probably do, at least to follow this demo) then you will need python dependencies:
 
