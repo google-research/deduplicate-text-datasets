@@ -1,6 +1,6 @@
 [package]
 name = "dedup_dataset" # the name of the package
-version = "0.1.0"    # the current version, obeying semver
+version = "1.0.0"    # the current version, obeying semver
 
 authors = ["Nicholas Carlini <nicholas@carlini.com>"]
 
@@ -11,5 +11,5 @@ overflow-checks = false  # Go FAAASSTTT!
 [dependencies]
 zstd = "0.5"
 crossbeam = "0.3"
-fasthash = "0.4"
 filebuffer = "0.4"
+clap = { version = "3.1.1", features = ["derive"] }

@@ -16,7 +16,7 @@ import tensorflow as tf
 import os
 import struct
 import numpy as np
-from transformers import GPT2Tokenizer
+from transformers import GPT2Tokenizer, T5Tokenizer
 import multiprocessing as mp
 
 import argparse
@@ -27,11 +27,18 @@ parser.add_argument('--save_dir', type=str)
 parser.add_argument('--name', type=str)
 parser.add_argument('--split', type=str)
 parser.add_argument('--tokenize', action='store_true')
-
+parser.add_argument('--tokenizer', type=str, default="gpt2")
+parser.add_argument('--pre_sep', type=bytes, default=b"\xff\xff")
+parser.add_argument('--post_sep', type=bytes, default=b"")
 args = parser.parse_args()
 
 if args.tokenize:
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+    if args.tokenizer == 'gpt2':
+        tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+    elif args.tokenizer == 't5':
+        tokenizer = T5Tokenizer.from_pretrained('t5-small')
+    else:
+        raise
 
 split = args.split
 data_dir = args.data_dir
@@ -44,11 +51,14 @@ ds = tfds.load(dataset_name, split=split, shuffle_files=False, batch_size=2**16,
 assert isinstance(ds, tf.data.Dataset)
 print(ds)
 
+pre_sep = args.pre_sep
+post_sep = args.post_sep
+
 UID = 0
 def sep():
     global UID
     UID += 1
-    return b"\xff\xff"+struct.pack("<I", UID)
+    return pre_sep+struct.pack("<I", UID)+post_sep
 
 def tok(x):
     if args.tokenize:
@@ -59,22 +69,24 @@ def tok(x):
     return out
 
 
+if not os.path.exists(save_dir):
+    os.mkdir(save_dir)
+
 fout = open(os.path.join(save_dir, dataset_name+"."+split), "wb")
 
-p = mp.Pool(96)
-
-i = 0
-sizes = [0]
-for b in ds:
-    print(i)
-
-    text = b['text'].numpy()
-    text = p.map(tok,text)
+with mp.Pool(mp.cpu_count()) as p:
+    i = 0
+    sizes = [0]
+    for b in ds:
+        print(i)
     
-    for x in text:
-        next_line = sep()+x
-        fout.write(next_line)
-        sizes.append(sizes[-1]+len(next_line))
-    i += 1
+        text = b['text'].numpy()
+        text = p.map(tok,text)
+        
+        for x in text:
+            next_line = sep()+x
+            fout.write(next_line)
+            sizes.append(sizes[-1]+len(next_line))
+        i += 1
 
 open(os.path.join(save_dir,dataset_name+"."+split+".size"), "wb").write(np.array(sizes,dtype=np.uint64).tobytes())
