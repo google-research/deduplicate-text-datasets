@@ -27,8 +27,10 @@ args = parser.parse_args()
 
 if args.tokenize:
     if args.tokenizer == 'gpt2':
+        from transformers import GPT2Tokenizer
         tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
     elif args.tokenizer == 't5':
+        from transformers import T5Tokenizer
         tokenizer = T5Tokenizer.from_pretrained('t5-small')
     else:
         raise
