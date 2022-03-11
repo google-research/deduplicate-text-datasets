@@ -1,3 +1,16 @@
+# Copyright 2022 Google LLC
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import numpy as np
 import os
 import shutil
@@ -38,13 +51,13 @@ def serialize_example(**feature):
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
-#print(cumsum[:5])
-
 remove = defaultdict(list)
 
 def run(args):
     this_idx, row = args
     new_row = {'text': row,
+               'version_id': '',
+               'wikidata_id': '',
                 'timestamp': '',
                 'url': '',
                 'content-length': '',
@@ -72,6 +85,8 @@ class MyDataset(tfds.core.GeneratorBasedBuilder):
         builder=self,
         features=tfds.features.FeaturesDict({
             'text': tfds.features.Text(),
+            'version_id': tfds.features.Text(),
+            'wikidata_id': tfds.features.Text(),
             'timestamp': tfds.features.Text(),
             'url': tfds.features.Text(),
             'content-length': tfds.features.Text(),
@@ -132,7 +147,6 @@ for line in fin:
 
 sizes = np.frombuffer(open(os.path.join(args.suffixarray_dir, args.name+"."+args.split+".size"), "rb").read(), dtype=np.uint64)
 
-#print(np.max(sizes))
 remove_ex = defaultdict(list)
 ptr = 0
 for i,byte_start in enumerate(sizes[:-1]):
@@ -146,15 +160,17 @@ for i,byte_start in enumerate(sizes[:-1]):
                              min(int(remove[ptr][1] - byte_start), byte_end-byte_start)))
         ptr += 1
 
-#print(remove_ex)
 tfds.load("my_dataset", data_dir=where+"_dedup")
 
             
-if dataset == "lm1b":
-    en = os.path.join(where+"_dedup", "lm1b")
+if dataset == "wiki40b":
+    en = os.path.join(where+"_dedup", "wiki40b")
     if not os.path.exists(en):
         os.mkdir(en)
-    en = os.path.join(en, "1.1.0")
+    en = os.path.join(en, "en")
+    if not os.path.exists(en):
+        os.mkdir(en)
+    en = os.path.join(en, "1.3.0")
     if not os.path.exists(en):
         os.mkdir(en)
 
