@@ -511,8 +511,12 @@ fn cmd_self_similar(data_file: &String, length_threshold: &usize, frequency_thre
 	    let mut first = true;
 	    
 	    loop {
-		cur_location = get_next_pointer_from_table(&mut table);
+		cur_location = get_next_pointer_from_table_canfail(&mut table);
 		i += 1;
+		if cur_location == std::u64::MAX {
+		    // The last two items in the file matched
+		    break;
+		}
 
 		let suf2 = &text[cur_location as usize..];
 		let does_match =  suf2.len() >= length_threshold && suf1.len() >= length_threshold && suf1[..length_threshold] == suf2[..length_threshold];

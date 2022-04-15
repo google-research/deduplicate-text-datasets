@@ -65,7 +65,6 @@ while True:
     for x,(s,e) in zip(files,started):
         size_data = os.path.getsize(x)
         FACT = np.ceil(np.log(size_data)/np.log(2)/8)
-        print("FACT", FACT)
         size_table = os.path.getsize(x+".table.bin")
         if not os.path.exists(x) or not os.path.exists(x+".table.bin") or size_table == 0 or size_data*FACT != size_table:
             cmd = "./target/debug/dedup_dataset make-part --data-file %s --start-byte %d --end-byte %d"%(sys.argv[1], s, e)
@@ -80,6 +79,8 @@ while True:
 
 print("Merging suffix trees")
 
+os.popen("rm tmp/out.table.bin.*").read()
+
 torun = " --suffix-path ".join(files)
 print("./target/debug/dedup_dataset merge --output-file %s --suffix-path %s --num-threads %d"%("tmp/out.table.bin", torun, mp.cpu_count()))
 os.popen("./target/debug/dedup_dataset merge --output-file %s --suffix-path %s --num-threads %d"%("tmp/out.table.bin", torun, mp.cpu_count())).read()
@@ -87,6 +88,12 @@ os.popen("./target/debug/dedup_dataset merge --output-file %s --suffix-path %s -
 print("Now merging individual tables")
 os.popen("cat tmp/out.table.bin.* > tmp/out.table.bin").read()
 print("Cleaning up")
-#os.popen("rm tmp/out.table.bin.*").read()
 os.popen("mv tmp/out.table.bin %s.table.bin"%sys.argv[1]).read()
 
+if os.path.exists(sys.argv[1]+".table.bin"):
+    if os.path.getsize(sys.argv[1]+".table.bin")%os.path.getsize(sys.argv[1]) != 0:
+        print("File size is wrong")
+        exit(1)
+else:
+    print("Failed to create table")
+    exit(1)
