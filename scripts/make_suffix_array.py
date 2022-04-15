@@ -83,7 +83,12 @@ os.popen("rm tmp/out.table.bin.*").read()
 
 torun = " --suffix-path ".join(files)
 print("./target/debug/dedup_dataset merge --output-file %s --suffix-path %s --num-threads %d"%("tmp/out.table.bin", torun, mp.cpu_count()))
-os.popen("./target/debug/dedup_dataset merge --output-file %s --suffix-path %s --num-threads %d"%("tmp/out.table.bin", torun, mp.cpu_count())).read()
+pipe = os.popen("./target/debug/dedup_dataset merge --output-file %s --suffix-path %s --num-threads %d"%("tmp/out.table.bin", torun, mp.cpu_count()))
+output = pipe.read()
+if pipe.close() is not None:
+    print("Something went wrong with merging.")
+    print("Please check that you ran with ulimit -Sn 100000")
+    exit(1)
 #exit(0)
 print("Now merging individual tables")
 os.popen("cat tmp/out.table.bin.* > tmp/out.table.bin").read()
