@@ -74,7 +74,7 @@ if not os.path.exists(save_dir):
 
 fout = open(os.path.join(save_dir, dataset_name+"."+split), "wb")
 
-with mp.Pool(mp.cpu_count()) as p:
+with mp.get_context("fork").Pool(mp.cpu_count()) as p:
     i = 0
     sizes = [0]
     for b in ds:

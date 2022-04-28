@@ -249,7 +249,7 @@ Okay so maybe you don't like reading. You skipped the entire section above. (Hon
 Then just do this
 
 ```
-bash scripts/scripts/run_pipeline.sh
+bash scripts/run_pipeline.sh
 python3 scripts/finish_dedup_wiki40b.py --data_dir ~/tensorflow_datasets/ --save_dir /tmp/dedup --name wiki40b --split test --suffixarray_dir data --remove /tmp/wiki40b.test.remove.byterange
 ```
 
