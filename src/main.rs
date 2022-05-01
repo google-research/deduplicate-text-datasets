@@ -283,7 +283,7 @@ fn count_occurances(text: &filebuffer::FileBuffer,
     assert!(size % (size_width as u64) == 0);
 
     let mut low = 0;
-    let mut high = size/(size_width as u64)-str.len() as u64;
+    let mut high = size/(size_width as u64);
     while low < high {
         let mid = (high+low)/2;
         let pos = table_load_filebuffer(&table, mid as usize, size_width);
