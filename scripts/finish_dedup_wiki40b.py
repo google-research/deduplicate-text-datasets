@@ -110,7 +110,7 @@ class MyDataset(tfds.core.GeneratorBasedBuilder):
                    data_dir=args.data_dir)
     
 
-    p = mp.Pool(96)
+    p = mp.get_context("fork").Pool(mp.cpu_count())
     i = -1
     for batch in ds:
          i += 1
