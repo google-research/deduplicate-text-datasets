@@ -317,7 +317,7 @@ fn count_occurances(text: &filebuffer::FileBuffer,
         println!("Found at: {}", pos);
     }
     
-    high = size/(size_width as u64)-buf.len() as u64;
+    high = size/(size_width as u64);
     while low < high {
         let mid = (high+low)/2;
         let pos = table_load_filebuffer(&table, mid as usize, size_width);
