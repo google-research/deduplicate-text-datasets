@@ -54,6 +54,7 @@ use std::io::BufReader;
 use std::fs::File;
 use std::io::prelude::*;
 use std::cmp::Reverse;
+use std::convert::TryInto;
 
 extern crate filebuffer;
 extern crate zstd;
@@ -92,6 +93,13 @@ enum Commands {
     },
 
     CountOccurrences {
+	#[clap(short, long)]
+	data_file: String,
+	#[clap(short, long)]
+	query_file: String,
+    },
+
+    CountOccurrencesMulti {
 	#[clap(short, long)]
 	data_file: String,
 	#[clap(short, long)]
@@ -250,6 +258,12 @@ fn get_next_pointer_from_table(tablestream:&mut TableStream) -> u64 {
     return r;
 }
 
+fn table_load_filebuffer(table:&filebuffer::FileBuffer, index:usize, width: usize) -> usize{
+    let mut tmp = [0u8; 8];
+    tmp[..width].copy_from_slice(&table[index*width..index*width+width]);
+    return u64::from_le_bytes(tmp) as usize;
+}
+
 /*
  * Helper function to actually do the count of the number of times something is repeated.
  * This should be fairly simple.
@@ -258,21 +272,28 @@ fn get_next_pointer_from_table(tablestream:&mut TableStream) -> u64 {
  * Then, binary search again to find the last location it occurrs.
  * Return the difference between the two.
 */ 
-fn count_occurances(text: &mut File,
-		    mut table: &mut BufReader<File>,
+fn count_occurances(text: &filebuffer::FileBuffer,
+		    size_text: u64,
+		    table: &filebuffer::FileBuffer,
 		    size: u64,
 		    str: &[u8],
-		    size_width: usize) -> u64 {
-    let mut buf = vec![0u8; str.len()];
+		    size_width: usize,
+		    print_where: bool) -> u64 {
+    let mut buf: &[u8];
     assert!(size % (size_width as u64) == 0);
-    
+
     let mut low = 0;
-    let mut high = size/(size_width as u64)-buf.len() as u64;
+    let mut high = size/(size_width as u64)-str.len() as u64;
     while low < high {
 	let mid = (high+low)/2;
-	let pos = table_load_disk(&mut table, mid as usize, size_width);
-	text.seek(std::io::SeekFrom::Start(pos as u64)).expect ("Seek failed!");
-	text.read_exact(&mut buf).unwrap();
+	let pos = table_load_filebuffer(&table, mid as usize, size_width);
+
+    	if pos + str.len() < size_text as usize {
+	    buf = &text[pos..pos+str.len()];
+	} else {
+	    buf = &text[pos..size_text as usize];
+	}
+
 	if str <= &buf {
 	    high = mid;
 	} else {
@@ -281,21 +302,33 @@ fn count_occurances(text: &mut File,
     }
     let start = low;
 
-    let pos = table_load_disk(&mut table, low as usize, size_width);
-    text.seek(std::io::SeekFrom::Start(pos as u64)).expect ("Seek failed!");
-    text.read_exact(&mut buf).unwrap();
+    let pos = table_load_filebuffer(&table, low as usize, size_width);
+    if pos + str.len() < size_text as usize {
+	buf = &text[pos..pos+str.len()];
+    } else {
+	buf = &text[pos..size_text as usize];
+    }
 
     if str != buf {
 	return 0; // not found
+    }
+
+    if print_where {
+	println!("Found at: {}", pos);
     }
     
     high = size/(size_width as u64)-buf.len() as u64;
     while low < high {
 	let mid = (high+low)/2;
-	let pos = table_load_disk(&mut table, mid as usize, size_width);
-	text.seek(std::io::SeekFrom::Start(pos as u64)).expect ("Seek failed!");
-	text.read_exact(&mut buf).unwrap();
-	if str != &buf {
+	let pos = table_load_filebuffer(&table, mid as usize, size_width);
+
+	if pos + str.len() < size_text as usize {
+	    buf = &text[pos..pos+str.len()];
+	} else {
+	    buf = &text[pos..size_text as usize];
+	}
+
+	if str != buf {
 	    high = mid;
 	} else {
 	    low = mid+1;
@@ -404,15 +437,14 @@ fn cmd_make_part(fpath: &String, start: u64, end: u64)   -> std::io::Result<()> 
 fn cmd_count_occurrences(fpath: &String, querypath: &String)   -> std::io::Result<()> {
     /* Count the numberof times a particular sequence occurs in the table.
      */
-    let mut text = fs::File::open(fpath.clone()).unwrap();
-
-    let mut table = std::io::BufReader::new(fs::File::open(format!("{}.table.bin", fpath)).unwrap());
 
     let metadata_text = fs::metadata(format!("{}", fpath))?;
     let metadata_table = fs::metadata(format!("{}.table.bin", fpath))?;
     let size_text = metadata_text.len();
     let size_table = metadata_table.len();
 
+    let text = filebuffer::FileBuffer::open(fpath).unwrap();
+    let table = filebuffer::FileBuffer::open(format!("{}.table.bin", fpath)).unwrap();
 
     assert!(size_table % size_text == 0);
     let size_width = size_table / size_text;
@@ -420,9 +452,41 @@ fn cmd_count_occurrences(fpath: &String, querypath: &String)   -> std::io::Resul
     let mut str = Vec::with_capacity(std::fs::metadata(querypath.clone()).unwrap().len() as usize);
     fs::File::open(querypath.clone()).unwrap().read_to_end(&mut str)?;
 
-    let occurances = count_occurances(&mut text, &mut table, size_table, &str[0..str.len()], size_width as usize);
+    let occurances = count_occurances(&text, size_text,  &table, size_table, &str[0..str.len()], size_width as usize, false);
 
     println!("Number of times present: {}\n", occurances);
+    Ok(())
+}
+
+/*
+ * Count the number of times a particular sequence occurs in the table.
+ * (for multiple queries)
+ */
+fn cmd_count_occurrences_multi(fpath: &String, querypath: &String)   -> std::io::Result<()> {
+
+    let metadata_text = fs::metadata(format!("{}", fpath))?;
+    let metadata_table = fs::metadata(format!("{}.table.bin", fpath))?;
+    let size_text = metadata_text.len();
+    let size_table = metadata_table.len();
+
+    let text = filebuffer::FileBuffer::open(fpath).unwrap();
+    let table = filebuffer::FileBuffer::open(format!("{}.table.bin", fpath)).unwrap();
+
+    assert!(size_table % size_text == 0);
+    let size_width = size_table / size_text;
+
+    let mut str = Vec::with_capacity(std::fs::metadata(querypath.clone()).unwrap().len() as usize);
+    fs::File::open(querypath.clone()).unwrap().read_to_end(&mut str)?;
+
+    let mut off = 0;
+    while off < str.len() {
+	let length = u32::from_le_bytes(str[off..off+4].try_into().expect("?")) as usize;
+	off += 4;
+
+	let occurances = count_occurances(&text, size_text, &table, size_table, &str[off..off+length], size_width as usize, true);
+	off += length;
+	println!("Number of times present: {}", occurances);
+    }
     Ok(())
 }
 
@@ -1154,6 +1218,11 @@ fn main()  -> std::io::Result<()> {
         Commands::CountOccurrences { data_file, query_file } => {
 	    cmd_count_occurrences(data_file,
 				  query_file)?;
+	}
+
+        Commands::CountOccurrencesMulti { data_file, query_file } => {
+	    cmd_count_occurrences_multi(data_file,
+					query_file)?;
 	}
 
         Commands::SelfSimilar { data_file, length_threshold, frequency_threshold, only_save_one, cache_dir, num_threads } => {
