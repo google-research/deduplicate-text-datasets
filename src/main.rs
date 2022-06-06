@@ -1017,6 +1017,10 @@ fn cmd_merge(data_files: &Vec<String>, output_file: &String, num_threads: i64)  
         }
     }
 
+    // Make sure we have enough space to take strided offsets for multiple threads
+    // This should be an over-approximation, and starts allowing new threads at 1k of data
+    let num_threads = std::cmp::min(num_threads, std::cmp::max((texts.len() as i64 - 1024)/10, 1));
+    println!("AA {}", num_threads);
 
     // Start a bunch of jobs that each work on non-overlapping regions of the final resulting suffix array
     // Each job is going to look at all of the partial suffix arrays to take the relavent slice.
@@ -1171,7 +1175,10 @@ fn cmd_collect(data_file: &String, cache_dir: &String, length_threshold: u64)  -
     if let Some(Reverse((data_pointer, index, which_array))) = heap.pop() {
         prev_start = data_pointer;
         prev_end = data_pointer + length_threshold;
-        heap.push(Reverse((outputs[which_array][index+1], index+1, which_array)));
+	// ensure this bucket has enough data to push the item
+        if index+1 < outputs[which_array].len() {
+            heap.push(Reverse((outputs[which_array][index+1], index+1, which_array)));
+	}
     } else {
         println!("No duplicates found! Either the dataset is duplicate-free or something went wrong.");
         return Ok(());
