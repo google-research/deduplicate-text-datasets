@@ -1019,7 +1019,7 @@ fn cmd_merge(data_files: &Vec<String>, output_file: &String, num_threads: i64)  
 
     // Make sure we have enough space to take strided offsets for multiple threads
     // This should be an over-approximation, and starts allowing new threads at 1k of data
-    let num_threads = std::cmp::min(num_threads, std::cmp::max((texts.len() as i64 - 1024)/10, 1));
+    let num_threads = std::cmp::min(num_threads, std::cmp::max((texts_len.iter().sum::<usize>() as i64 - 1024)/10, 1));
     println!("AA {}", num_threads);
 
     // Start a bunch of jobs that each work on non-overlapping regions of the final resulting suffix array
