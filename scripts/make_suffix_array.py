@@ -45,7 +45,7 @@ for jobstart in range(0, total_jobs, jobs_at_once):
     wait = []
     for i in range(jobstart,jobstart+jobs_at_once):
         s, e = i*S, min((i+1)*S+HACK, data_size)
-        cmd = "./target/debug/dedup_dataset make-part --data-file %s --start-byte %d --end-byte %d"%(sys.argv[1], s, e)
+        cmd = "./target/release/dedup_dataset make-part --data-file %s --start-byte %d --end-byte %d"%(sys.argv[1], s, e)
         started.append((s, e))
         print(cmd)
         wait.append(os.popen(cmd))
@@ -67,7 +67,7 @@ while True:
         FACT = np.ceil(np.log(size_data)/np.log(2)/8)
         size_table = os.path.getsize(x+".table.bin")
         if not os.path.exists(x) or not os.path.exists(x+".table.bin") or size_table == 0 or size_data*FACT != size_table:
-            cmd = "./target/debug/dedup_dataset make-part --data-file %s --start-byte %d --end-byte %d"%(sys.argv[1], s, e)
+            cmd = "./target/release/dedup_dataset make-part --data-file %s --start-byte %d --end-byte %d"%(sys.argv[1], s, e)
             print(cmd)
             wait.append(os.popen(cmd))
     print("Rerunning", len(wait), "jobs because they failed.")
@@ -82,8 +82,8 @@ print("Merging suffix trees")
 os.popen("rm tmp/out.table.bin.*").read()
 
 torun = " --suffix-path ".join(files)
-print("./target/debug/dedup_dataset merge --output-file %s --suffix-path %s --num-threads %d"%("tmp/out.table.bin", torun, mp.cpu_count()))
-pipe = os.popen("./target/debug/dedup_dataset merge --output-file %s --suffix-path %s --num-threads %d"%("tmp/out.table.bin", torun, mp.cpu_count()))
+print("./target/release/dedup_dataset merge --output-file %s --suffix-path %s --num-threads %d"%("tmp/out.table.bin", torun, mp.cpu_count()))
+pipe = os.popen("./target/release/dedup_dataset merge --output-file %s --suffix-path %s --num-threads %d"%("tmp/out.table.bin", torun, mp.cpu_count()))
 output = pipe.read()
 if pipe.close() is not None:
     print("Something went wrong with merging.")

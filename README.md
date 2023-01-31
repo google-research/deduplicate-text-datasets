@@ -55,7 +55,7 @@ Later we'll cover how to actually deduplicate a dataset, for now we'll just walk
 
 Start by running
 
-```cargo build```
+```cargo build --release```
 
 to compile the rust code, and then run
 
@@ -107,7 +107,7 @@ Now let's explain how to deduplicate a dataset as we do in the paper. As a runni
 The first step in deduplicating a dataset is identifying all substrings of a given length that are repeated more than some threshold number of times. To do this we run the `self-similar` command:
 
 ```
-cargo run self-similar --data-file data/wiki40b.test --length-threshold 100 --cache-dir /tmp/cache --num-threads 8
+cargo run --release self-similar --data-file data/wiki40b.test --length-threshold 100 --cache-dir /tmp/cache --num-threads 8
 ```
 
 For larger datasets, you may want to replace num-threads with as many cores as you have on your machine. It parallelizes perfectly, so there's no reason not to. For now though, keep it at 8 just for the sake of keeping things on track with this guide.
@@ -163,7 +163,7 @@ The current data we have would tag this sequence as being a duplicate 99 times--
 This step reduces that down to just find ranges of bytes [a,b) which are duplicated more than once.
 To do this, run
 ```
-cargo run collect --data-file data/wiki40b.test --cache-dir /tmp/cache --length-threshold 100 > /tmp/wiki40b.test.remove.byterange
+cargo run --release collect --data-file data/wiki40b.test --cache-dir /tmp/cache --length-threshold 100 > /tmp/wiki40b.test.remove.byterange
 ```
 
 The output here will be a long list of byte pair ranges
@@ -228,7 +228,7 @@ To do this, just re-run everything top-down:
 ```
 python3 scripts/load_dataset.py --data_dir /tmp/tfds_wiki40b_dedup --save_dir data_dedup --name wiki40b --split test
 python3 scripts/make_suffix_array.py data_dedup/wiki40b.test
-cargo run self-similar --data-file data/wiki40b.test --length-threshold 100 --cache-dir /tmp/cache --num-threads 8
+cargo run --release self-similar --data-file data/wiki40b.test --length-threshold 100 --cache-dir /tmp/cache --num-threads 8
 ```
 
 and observe the output
@@ -275,7 +275,7 @@ The above scripts work by calling into the core Rust suffix array deduplicator. 
 
 To build a suffix array for any particular file, you can run
 
-```cargo run make --data-file [file_path]```
+```cargo run --release make --data-file [file_path]```
 
 This will create a file called `[file_path].table.bin` which contains the suffix array for the file provided. This algorithm is linear time, but (a) only runs on a single core, and (b) has memory requirement `O(big * len(file))` which is prohibitive for large files.
 
@@ -293,7 +293,7 @@ The two steps are described below.
 
 The first generates a suffix array from a piece of a file. This is implemented by running
 
-```cargo run make_part --data-file [file_path] --start_byte [byte_offset] --end_byte [byte_offset]```
+```cargo run --release make_part --data-file [file_path] --start_byte [byte_offset] --end_byte [byte_offset]```
 
 And builds a suffix array for the byte sequence between [byte_start] and [byte_end] for the given file. Multiple of these can be run in parallel to build a suffix array for a file quickly.
 
@@ -301,7 +301,7 @@ And builds a suffix array for the byte sequence between [byte_start] and [byte_e
 
 Given the several independent suffix arrays, merging them is now just a matter of calling
 
-```cargo run merge --suffix-path [path_to_partial_suffix_tree] [--suffix-path [another_path_to_partial] ...] -- output-file [tmp_output_directory] --num-threads [number-of-machine-cores]```
+```cargo run --release merge --suffix-path [path_to_partial_suffix_tree] [--suffix-path [another_path_to_partial] ...] -- output-file [tmp_output_directory] --num-threads [number-of-machine-cores]```
 
 to generate a collection of ordered suffix arrays pieces in the output directory. The final step just requires merging these together
 
@@ -312,7 +312,7 @@ to generate a collection of ordered suffix arrays pieces in the output directory
 Given a suffix array file, as generated in the previous section, it can now be queried for interesting statistics.
 The simplest operation, counting occurrences of particular substrings, takes O(log(N)) time and O(query_length) memory requirements, (as shown above with `scripts/count_occurrences.py`). To do this you can run:
 
-```cargo run count-occurrences --data-file /path/to/dataset --query-file /path/to/query_file```
+```cargo run --release count-occurrences --data-file /path/to/dataset --query-file /path/to/query_file```
 
 (Indeed, the python script is just a wrapper that makes calling this nicer, with the option for tokenization.)
 This is useful mainly as a commandline interface to interact with the dataset to find interesting properties. To run more sophisticated analysis, use the tools described below:
@@ -325,13 +325,13 @@ Once the suffix array for the dataset has been constructed, this algorithm there
 
 Notice that this command also requires that the entire dataset fits in memory. For many datasets this is not a problem, but the C4 dataset is 350 GB and the Pile dataset is 750 GB (both even after tokenization). The machine must therefore have a lot of RAM for this to work.
 
-```cargo run across-similar --data-file-1 [dataset1] --data-file-2 [dataset2] --length-threshold [num_bytes] --cache-dir [where/to/save] --num-threads [N]```
+```cargo run --release across-similar --data-file-1 [dataset1] --data-file-2 [dataset2] --length-threshold [num_bytes] --cache-dir [where/to/save] --num-threads [N]```
 
 This creates files (similar to the self-similar command containing the position of all examples in dataset2 that are also in dataset1, and also at the same time the position of all examples in dataset1 that are also in dataset2. As before, the output is both `dups` files that have the byte offset of where the `length-threshold` duplicates occur, and also `sizes` files that give the sizes of each cluster.
 
 It's again possible to run
 
-```cargo run collect --data-name [dataset1 or dataset2]```
+```cargo run --release collect --data-name [dataset1 or dataset2]```
 
 This will write to stdout the byte ranges [a,b) where all tokens in this range are part of an overlap contained in the other document.
 
@@ -339,7 +339,7 @@ This will write to stdout the byte ranges [a,b) where all tokens in this range a
 
 To find duplicates that are contained within one document (for example, to actually deduplicate a dataset as we do in the paper) run the command
 
-```cargo run self-similar --data-file [path] --length-threshold [bytes] --cache-dir [where/to/save] --num-threads [cpu cores]```
+```cargo run --release self-similar --data-file [path] --length-threshold [bytes] --cache-dir [where/to/save] --num-threads [cpu cores]```
 
 This will find all repeated substrings contained in the dataset above a given length threshold.
 To see how it is used look above where it's called as part of the dataset deduplication process.
