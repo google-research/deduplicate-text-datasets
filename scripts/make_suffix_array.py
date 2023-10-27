@@ -63,13 +63,22 @@ while True:
     
     wait = []
     for x,(s,e) in zip(files,started):
-        size_data = os.path.getsize(x)
-        FACT = np.ceil(np.log(size_data)/np.log(2)/8)
-        size_table = os.path.getsize(x+".table.bin")
-        if not os.path.exists(x) or not os.path.exists(x+".table.bin") or size_table == 0 or size_data*FACT != size_table:
+        go = False
+        if not os.path.exists(x):
+            print("GOGO")
+            go = True
+        else:
+            size_data = os.path.getsize(x)
+            FACT = np.ceil(np.log(size_data)/np.log(2)/8)
+            print("FACT", FACT,size_data*FACT, os.path.getsize(x+".table.bin"))
+            if not os.path.exists(x) or not os.path.exists(x+".table.bin") or os.path.getsize(x+".table.bin") == 0 or size_data*FACT != os.path.getsize(x+".table.bin"):
+                go = True
+        if go:
             cmd = "./target/debug/dedup_dataset make-part --data-file %s --start-byte %d --end-byte %d"%(sys.argv[1], s, e)
             print(cmd)
             wait.append(os.popen(cmd))
+            if len(wait) >= jobs_at_once:
+                break
     print("Rerunning", len(wait), "jobs because they failed.")
     [x.read() for x in wait]
     time.sleep(1)

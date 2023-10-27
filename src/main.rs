@@ -97,6 +97,10 @@ enum Commands {
         data_file: String,
         #[clap(short, long)]
         query_file: String,
+        #[clap(short, long)]
+        print_location: bool,
+        #[clap(short, long)]
+        load_disk: bool,
     },
 
     CountOccurrencesMulti {
@@ -104,6 +108,15 @@ enum Commands {
         data_file: String,
         #[clap(short, long)]
         query_file: String,
+        #[clap(short, long)]
+        load_disk: bool,
+    },
+
+    FindTrainingData {
+        #[clap(short, long)]
+        data_file: String,
+        #[clap(short, long)]
+        query_file: Vec<String>,
     },
 
     SelfSimilar {
@@ -264,6 +277,12 @@ fn table_load_filebuffer(table:&filebuffer::FileBuffer, index:usize, width: usiz
     return u64::from_le_bytes(tmp) as usize;
 }
 
+fn table_load(table:&[u8], index:usize, width: usize) -> usize{
+    let mut tmp = [0u8; 8];
+    tmp[..width].copy_from_slice(&table[index*width..index*width+width]);
+    return u64::from_le_bytes(tmp) as usize;
+}
+
 /*
  * Helper function to actually do the count of the number of times something is repeated.
  * This should be fairly simple.
@@ -312,10 +331,6 @@ fn count_occurances(text: &filebuffer::FileBuffer,
     if str != buf {
         return 0; // not found
     }
-
-    if print_where {
-        println!("Found at: {}", pos);
-    }
     
     high = size/(size_width as u64);
     while low < high {
@@ -334,7 +349,181 @@ fn count_occurances(text: &filebuffer::FileBuffer,
             low = mid+1;
         }
     }
+
+    if print_where {
+        for i in start..low {
+           let pos = table_load_filebuffer(&table, i as usize, size_width);
+            println!("Found at: {}", pos);
+	    break;
+       }
+    }
+
     return low-start;
+}
+
+fn count_occurances_memory(text: &[u8],
+                    size_text: u64,
+                    table: &[u8],
+                    size: u64,
+                    str: &[u8],
+                    size_width: usize,
+                    print_where: bool) -> u64 {
+    let mut buf: &[u8];
+    assert!(size % (size_width as u64) == 0);
+
+    let mut low = 0;
+    let mut high = size/(size_width as u64);
+    while low < high {
+        let mid = (high+low)/2;
+        let pos = table_load(&table, mid as usize, size_width);
+
+        if pos + str.len() < size_text as usize {
+            buf = &text[pos..pos+str.len()];
+        } else {
+            buf = &text[pos..size_text as usize];
+        }
+
+        if str <= &buf {
+            high = mid;
+        } else {
+            low = mid+1;
+        }
+    }
+    let start = low;
+
+    let pos = table_load(&table, low as usize, size_width);
+    if pos + str.len() < size_text as usize {
+        buf = &text[pos..pos+str.len()];
+    } else {
+        buf = &text[pos..size_text as usize];
+    }
+
+    if str != buf {
+        return 0; // not found
+    }
+    
+    high = size/(size_width as u64);
+    while low < high {
+        let mid = (high+low)/2;
+        let pos = table_load(&table, mid as usize, size_width);
+
+        if pos + str.len() < size_text as usize {
+            buf = &text[pos..pos+str.len()];
+        } else {
+            buf = &text[pos..size_text as usize];
+        }
+
+        if str != buf {
+            high = mid;
+        } else {
+            low = mid+1;
+        }
+    }
+
+    if print_where {
+        for i in start..low {
+           let pos = table_load(&table, i as usize, size_width);
+           println!("Found at: {}", pos);
+	    break;
+       }
+    }
+
+    return low-start;
+}
+
+fn is_present_memory(text: &[u8],
+                    size_text: u64,
+                    table: &[u8],
+                    size: u64,
+                    str: &[u8],
+                    size_width: usize) -> u64 {
+    let mut buf: &[u8];
+    assert!(size % (size_width as u64) == 0);
+
+    let mut low = 0;
+    let mut high = size/(size_width as u64);
+    while low < high {
+        let mid = (high+low)/2;
+        let pos = table_load(&table, mid as usize, size_width);
+
+        if pos + str.len() < size_text as usize {
+            buf = &text[pos..pos+str.len()];
+        } else {
+            buf = &text[pos..size_text as usize];
+        }
+
+        if str <= &buf {
+            high = mid;
+        } else {
+            low = mid+1;
+        }
+    }
+
+    if low*(size_width as u64)+(size_width as u64) >= (table.len() as u64) {
+	return 0;
+    }
+    let pos = table_load(&table, low as usize, size_width);
+    if pos + str.len() < size_text as usize {
+        buf = &text[pos..pos+str.len()];
+    } else {
+        buf = &text[pos..size_text as usize];
+    }
+
+    if str != buf {
+        return 0; // not found
+    }
+    
+    return 1;
+}
+
+fn find_index_memory(text: &[u8],
+                     size_text: u64,
+                     table: &[u8],
+                     size: u64,
+                     str: &[u8],
+                     size_width: usize) -> u64 {
+    let mut buf: &[u8];
+    assert!(size % (size_width as u64) == 0);
+
+    let mut low = 0;
+    let mut high = size/(size_width as u64);
+    while low < high {
+	
+        let mid = (high+low)/2;
+        let pos = table_load(&table, mid as usize, size_width);
+
+        if pos + str.len() < size_text as usize {
+            buf = &text[pos..pos+str.len()];
+        } else {
+            buf = &text[pos..size_text as usize];
+        }
+
+        if str <= &buf {
+            high = mid;
+        } else {
+            low = mid+1;
+        }
+    }
+
+    if low*(size_width as u64)+(size_width as u64) >= (table.len() as u64) {
+	return u64::MAX;
+    }
+    let pos = table_load(&table, (low-1) as usize, size_width);
+    let pos2 = table_load(&table, (low) as usize, size_width);
+
+    let other = &text[pos as usize..];
+    let other2 = &text[pos2 as usize..];
+    
+    let maybe_match_len1 = (0..65536).find(|&j| !(j < other.len() && j < str.len() && str[j] == other[j]));
+    let maybe_match_len2 = (0..65536).find(|&j| !(j < other2.len() && j < str.len() && str[j] == other2[j]));
+
+    if let Some(match_len1) = maybe_match_len1 {
+	if let Some(match_len2) = maybe_match_len2 {
+	    return std::cmp::max(match_len1, match_len2) as u64;
+	}
+    }
+    
+    return 0;
 }
 
 /* 
@@ -434,7 +623,7 @@ fn cmd_make_part(fpath: &String, start: u64, end: u64)   -> std::io::Result<()> 
  * not 2. This is different from python's "aaaa".count("aa") which will say 2.
  * This may or may not be a problem for you. But if is is, that's you're problem, not mine.
  */
-fn cmd_count_occurrences(fpath: &String, querypath: &String)   -> std::io::Result<()> {
+fn cmd_count_occurrences(fpath: &String, querypath: &String, print_location: bool, load_disk: bool)   -> std::io::Result<()> {
     /* Count the numberof times a particular sequence occurs in the table.
      */
 
@@ -443,16 +632,32 @@ fn cmd_count_occurrences(fpath: &String, querypath: &String)   -> std::io::Resul
     let size_text = metadata_text.len();
     let size_table = metadata_table.len();
 
+    let mut str = Vec::with_capacity(std::fs::metadata(querypath.clone()).unwrap().len() as usize);
+    fs::File::open(querypath.clone()).unwrap().read_to_end(&mut str)?;
+
+    let occurances;
+
+    if load_disk {
     let text = filebuffer::FileBuffer::open(fpath).unwrap();
     let table = filebuffer::FileBuffer::open(format!("{}.table.bin", fpath)).unwrap();
 
     assert!(size_table % size_text == 0);
     let size_width = size_table / size_text;
 
-    let mut str = Vec::with_capacity(std::fs::metadata(querypath.clone()).unwrap().len() as usize);
-    fs::File::open(querypath.clone()).unwrap().read_to_end(&mut str)?;
+    occurances = count_occurances_memory(&text, size_text,  &table, size_table, &str[0..str.len()], size_width as usize, print_location);
+    } else {
+    
+    let mut text = Vec::with_capacity(size_text as usize);
+    fs::File::open(format!("{}", fpath)).unwrap().read_to_end(&mut text)?;
 
-    let occurances = count_occurances(&text, size_text,  &table, size_table, &str[0..str.len()], size_width as usize, false);
+    let mut table = Vec::with_capacity(size_table as usize);
+    fs::File::open(format!("{}.table.bin", fpath)).unwrap().read_to_end(&mut table)?;
+
+    assert!(size_table % size_text == 0);
+    let size_width = size_table / size_text;
+
+    occurances = count_occurances_memory(&text, size_text,  &table, size_table, &str[0..str.len()], size_width as usize, print_location);
+    }
 
     println!("Number of times present: {}\n", occurances);
     Ok(())
@@ -462,31 +667,132 @@ fn cmd_count_occurrences(fpath: &String, querypath: &String)   -> std::io::Resul
  * Count the number of times a particular sequence occurs in the table.
  * (for multiple queries)
  */
-fn cmd_count_occurrences_multi(fpath: &String, querypath: &String)   -> std::io::Result<()> {
+fn cmd_count_occurrences_multi(fpath: &String, querypath: &String, load_disk: bool)   -> std::io::Result<()> {
 
     let metadata_text = fs::metadata(format!("{}", fpath))?;
     let metadata_table = fs::metadata(format!("{}.table.bin", fpath))?;
     let size_text = metadata_text.len();
     let size_table = metadata_table.len();
 
+
+    let mut str = Vec::with_capacity(std::fs::metadata(querypath.clone()).unwrap().len() as usize);
+    fs::File::open(querypath.clone()).unwrap().read_to_end(&mut str)?;
+
+    if load_disk {
+	println!("LOAD DISK");
     let text = filebuffer::FileBuffer::open(fpath).unwrap();
     let table = filebuffer::FileBuffer::open(format!("{}.table.bin", fpath)).unwrap();
 
     assert!(size_table % size_text == 0);
     let size_width = size_table / size_text;
 
-    let mut str = Vec::with_capacity(std::fs::metadata(querypath.clone()).unwrap().len() as usize);
-    fs::File::open(querypath.clone()).unwrap().read_to_end(&mut str)?;
+    let mut off = 0;
+    while off < str.len() {
+        let length = u32::from_le_bytes(str[off..off+4].try_into().expect("?")) as usize;
+        off += 4;
+
+        let occurances = count_occurances(&text, size_text, &table, size_table, &str[off..off+length], size_width as usize, false);
+        off += length;
+        println!("Number of times present: {}", occurances);
+    }
+    } else {    
+
+    let mut text = Vec::with_capacity(size_text as usize);
+    fs::File::open(format!("{}", fpath)).unwrap().read_to_end(&mut text)?;
+
+    let mut table = Vec::with_capacity(size_table as usize);
+    fs::File::open(format!("{}.table.bin", fpath)).unwrap().read_to_end(&mut table)?;
+
+    assert!(size_table % size_text == 0);
+    let size_width = size_table / size_text;
 
     let mut off = 0;
     while off < str.len() {
         let length = u32::from_le_bytes(str[off..off+4].try_into().expect("?")) as usize;
         off += 4;
 
-        let occurances = count_occurances(&text, size_text, &table, size_table, &str[off..off+length], size_width as usize, true);
+        let occurances = count_occurances_memory(&text, size_text, &table, size_table, &str[off..off+length], size_width as usize, false);
         off += length;
         println!("Number of times present: {}", occurances);
     }
+    }
+    Ok(())
+}
+
+fn cmd_find_training_data_2(fpath: &String, querypaths: &Vec<String>)   -> std::io::Result<()> {
+
+    let metadata_text = fs::metadata(format!("{}", fpath))?;
+    let metadata_table = fs::metadata(format!("{}.table.bin", fpath))?;
+    let size_text = metadata_text.len();
+    let size_table = metadata_table.len();
+
+
+    println!("Load 1");
+    let mut text = Vec::with_capacity(size_text as usize);
+    fs::File::open(format!("{}", fpath)).unwrap().read_to_end(&mut text)?;
+
+    println!("Load 2");
+    let mut table = Vec::with_capacity(size_table as usize);
+    fs::File::open(format!("{}.table.bin", fpath)).unwrap().read_to_end(&mut table)?;
+
+    println!("Finished load");
+    
+    assert!(size_table % size_text == 0);
+    let size_width = size_table / size_text;
+
+    for querypath in querypaths {
+	println!("Processing {:?}", querypath);
+	let mut str = Vec::with_capacity(std::fs::metadata(querypath.clone()).unwrap().len() as usize);
+	fs::File::open(querypath.clone()).unwrap().read_to_end(&mut str)?;
+
+	fn worker(text:&[u8], table:&[u8], str:&[u8],
+		  size_width: u64, size_text: u64, size_table: u64,
+		  fpath: &String, querypath: &String, 
+		  start:usize, end:usize) -> usize {
+	
+	    let mut count = vec![0u64; (end-start)/2 as usize];
+	    for off in (start..end).step_by(2) {
+
+		let match_len = find_index_memory(text, size_text, table, size_table, &str[off..], size_width as usize);
+		//println!("Byte {:x} is {}", off/2 - start/2, match_len/2);
+		//println!("Size {}", match_len);
+		if match_len > 7 {
+		    count[off/2 - start/2] = std::cmp::min(match_len/2, 65536) as u64;
+		}
+	    }
+
+	    let mut buffer = File::create(format!("{}_{}_{:012}_{:012}", querypath, fpath.split("/").last().unwrap(), start, end)).unwrap();
+	    let bufout = to_bytes(&count, 2);
+	    buffer.write_all(&bufout).unwrap();
+	    return 0;
+	}
+
+	let num_threads = 176;
+	let increment:i64 = (str.len() as i64-num_threads)/num_threads/2;
+	let _answer = crossbeam::scope(|scope| {
+	    let mut result = Vec::with_capacity(num_threads as usize);
+	    let text = &text;
+	    let table = &table;
+	    let querypath = &querypath;
+	    let fpath = &fpath;
+	    let str = &str;
+	    for i in 0..176 {
+		let one_result = scope.spawn(move || {
+		    return worker(text, table, str,
+				  size_width, size_text, size_table,
+				  fpath, querypath, 
+				  2*std::cmp::max(0i64,i*increment) as usize,
+				  2*std::cmp::min(((i+1)*increment) as usize, str.len()))
+		});
+		result.push(one_result);
+	    }
+
+	    let thread_sum:usize = result.into_iter().map(|t| t.join()).sum();
+	});
+
+	
+    }
+    
     Ok(())
 }
 
@@ -750,10 +1056,11 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
                 // the first string that are equal to target_suf
                 let start = i;
                 while suf1.len() >= length_threshold && &suf1[..length_threshold] == target_suf {
+    		    //println!("Match A {}", location1);
                     outfile1.write_all(&to_bytes(&[location1 as u64][..], size_width_1)[..]).expect("Ok");
+                    i += 1;
 
                     location1 = get_next_pointer_from_table_canfail(&mut table1);
-                    i += 1;
                     if location1 == std::u64::MAX {
                         break;
                     }
@@ -765,10 +1072,11 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
                 // And now find all matches from the second string that are equal to target_suf
                 let start = j;
                 while suf2.len() >= length_threshold && &suf2[..length_threshold] == target_suf {
+    		    //println!("Match B {}", location2);
                     outfile2.write_all(&to_bytes(&[location2 as u64][..], size_width_2)[..]).expect("Ok");
+                    j += 1;
                     
                     location2 = get_next_pointer_from_table(&mut table2);
-                    j += 1;
                     if location2 == std::u64::MAX {
                         break;
                     }
@@ -776,6 +1084,7 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
                 }
                 duplicate_count += j-start;
                 outfile2_sizes.write_all(&to_bytes(&[(j-start) as u64][..], size_width_2)[..]).expect("Ok");
+		//println!("\n");
             } else if suf1 < suf2 {
                 // No match, and the first suffix is smaller. Increment the smaller one
                 i += 1;
@@ -1019,7 +1328,7 @@ fn cmd_merge(data_files: &Vec<String>, output_file: &String, num_threads: i64)  
 
     // Make sure we have enough space to take strided offsets for multiple threads
     // This should be an over-approximation, and starts allowing new threads at 1k of data
-    let num_threads = std::cmp::min(num_threads, std::cmp::max((texts.len() as i64 - 1024)/10, 1));
+    //let num_threads = std::cmp::min(num_threads, std::cmp::max((texts.len() as i64 - 1024)/10, 1));
     println!("AA {}", num_threads);
 
     // Start a bunch of jobs that each work on non-overlapping regions of the final resulting suffix array
@@ -1208,6 +1517,58 @@ fn cmd_collect(data_file: &String, cache_dir: &String, length_threshold: u64)  -
     Ok(())
 }
 
+/*
+fn cmd_collect(data_file: &String, cache_dir: &String, length_threshold: u64)  -> std::io::Result<()> {
+    let paths = fs::read_dir(cache_dir).unwrap();
+    
+
+    let metadata_text = fs::metadata(format!("{}", data_file))?;
+    let metadata_table = fs::metadata(format!("{}.table.bin", data_file))?;
+    let size_text = metadata_text.len();
+    let size_table = metadata_table.len();
+
+    let mut output = bitbox!(u32, Msb0; 0; metadata_text.len() as usize);
+
+    let mut ranges:Vec<(u64,u64)> = Vec::with_capacity(1000);
+
+    assert!(size_table % size_text == 0);
+    let size_width = size_table / size_text;
+
+    let ds_name = data_file.split("/").last().unwrap();
+    
+    
+    let mut path_list = Vec::with_capacity(1000);
+    for path in paths {
+        let path = path.unwrap().path().as_path().to_str().unwrap().to_string();
+        if !path.starts_with(&Path::new(cache_dir).join(format!("dups_{}_", ds_name.clone())).into_os_string().into_string().unwrap()) {
+            continue;
+        }
+        path_list.push(path);
+    }
+
+    // 1. Perform an initial sort of each of the found duplicates
+    
+    let mut result = Vec::with_capacity(100);
+    crossbeam::scope(|scope| {
+        for path in path_list.into_iter() {
+            let path = path.clone();
+            let out = scope.spawn(move || {
+                let all_items = from_bytes(fs::read(path.clone()).unwrap(), size_width as usize);
+		for x in all_items {
+		    for y in 0..length_threshold {
+    		        output.set_unchecked((x+y) as usize, true);
+	            }
+		}
+		return 0;
+            });
+            result.push(out);
+        }
+    });
+    let _outputs:Vec<u64> = result.into_iter().map(|t| t.join()).collect();
+    Ok(())
+}
+*/
+
 fn main()  -> std::io::Result<()> {
     
     let args = Args::parse();
@@ -1222,14 +1583,22 @@ fn main()  -> std::io::Result<()> {
             cmd_make_part(data_file, *start_byte as u64, *end_byte as u64)?;
         }
 
-        Commands::CountOccurrences { data_file, query_file } => {
+        Commands::CountOccurrences { data_file, query_file, print_location, load_disk } => {
             cmd_count_occurrences(data_file,
-                                  query_file)?;
+                                  query_file,
+				  *print_location,
+				  *load_disk)?;
         }
 
-        Commands::CountOccurrencesMulti { data_file, query_file } => {
+        Commands::CountOccurrencesMulti { data_file, query_file, load_disk } => {
             cmd_count_occurrences_multi(data_file,
-                                        query_file)?;
+                                        query_file,
+					*load_disk)?;
+        }
+
+        Commands::FindTrainingData { data_file, query_file } => {
+            cmd_find_training_data_2(data_file,
+	                           query_file)?;
         }
 
         Commands::SelfSimilar { data_file, length_threshold, frequency_threshold, only_save_one, cache_dir, num_threads } => {
