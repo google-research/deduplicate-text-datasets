@@ -46,7 +46,11 @@ You'll also need a C compiler, `sudo apt-get install gcc` will do that if you do
 
 If you additionally want to generate datasets to run the rust script on (and you probably do, at least to follow this demo) then you will need python dependencies:
 
-```pip3 install numpy scipy tensorflow tensorflow_datasets transformers sentencepiece```
+```
+pip3 install numpy scipy sentencepiece
+pip3 install -r requirements-tf.txt
+```
+
 
 ## Basic Usage
 

@@ -1,0 +1,5 @@
+tensorflow==2.9.0
+tensorflow-datasets==4.9.3
+tensorflow-estimator==2.9.0
+tensorflow-io-gcs-filesystem==0.34.0
+tensorflow-metadata==1.14.0
