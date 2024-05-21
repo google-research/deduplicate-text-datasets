@@ -319,6 +319,10 @@ fn count_occurances(text: &filebuffer::FileBuffer,
             low = mid+1;
         }
     }
+    if low == size/(size_width as u64) {
+        return 0;
+    }
+
     let start = low;
 
     let pos = table_load_filebuffer(&table, low as usize, size_width);
@@ -389,6 +393,10 @@ fn count_occurances_memory(text: &[u8],
             low = mid+1;
         }
     }
+    if low == size/(size_width as u64) {
+        return 0;
+    }
+
     let start = low;
 
     let pos = table_load(&table, low as usize, size_width);
