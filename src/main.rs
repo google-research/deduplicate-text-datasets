@@ -12,13 +12,12 @@
  * limitations under the License.
  */
 
-
 /* Create and use suffix arrays for deduplicating language model datasets.
  *
  * A suffix array A for a sequence S is a datastructure that contains all
  * suffixes of S in sorted order. To be space efficient, instead of storing
  * the actual suffix, we just store the pointer to the start of the suffix.
- * To be time efficient, it uses fancy algorithms to not require quadratic 
+ * To be time efficient, it uses fancy algorithms to not require quadratic
  * (or worse) work. If we didn't care about either, then we could literally
  * just define (in python)
  * A = sorted(S[i:] for i in range(len(S)))
@@ -26,7 +25,7 @@
  * Suffix arrays are amazing because they allow us to run lots of string
  * queries really quickly, while also only requiring an extra 8N bytes of
  * storage (one 64-bit pointer for each byte in the sequence).
- * 
+ *
  * This code is designed to work with Big Data (TM) and most of the
  * complexity revolves around the fact that we do not require the
  * entire suffix array to fit in memory. In order to keep things managable,
@@ -38,32 +37,32 @@
  * is the first program I've ever written in rust. I still don't actually
  * understand what borrowing something means, but have found that if I
  * add enough &(&&x.copy()).clone() then usually the compiler just loses
- * all hope in humanity and lets me do what I want. I apologize in advance 
+ * all hope in humanity and lets me do what I want. I apologize in advance
  * to anyone actually does know rust and wants to lock me in a small room
  * with the Rust Book by Klabnik & Nichols until I repent for my sins.
  * (It's me, two months in the future. I now more or less understand how
  * to borrow. So now instead of the code just being all awful, you'll get
  * a nice mix of sane rust and then suddenly OH-NO-WHAT-HAVE-YOU-DONE-WHY!?!)
- */ 
+ */
 
-use std::path::Path;
-use std::time::Instant;
-use std::fs;
-use std::io::Read;
-use std::io::BufReader;
-use std::fs::File;
-use std::io::prelude::*;
 use std::cmp::Reverse;
 use std::convert::TryInto;
+use std::fs;
+use std::fs::File;
+use std::io::prelude::*;
+use std::io::BufReader;
+use std::io::Read;
+use std::path::Path;
+use std::time::Instant;
 
+extern crate clap;
+extern crate crossbeam;
 extern crate filebuffer;
 extern crate zstd;
-extern crate crossbeam;
-extern crate clap;
 
+use clap::{Parser, Subcommand};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use clap::{Parser, Subcommand};
 
 mod table;
 
@@ -76,7 +75,6 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    
     #[clap(arg_required_else_help = true)]
     Make {
         #[clap(short, long)]
@@ -163,11 +161,10 @@ enum Commands {
         cache_dir: String,
         #[clap(short, long)]
         length_threshold: u64,
-    }
-    
+    },
 }
 
-/* Convert a uint64 array to a uint8 array. 
+/* Convert a uint64 array to a uint8 array.
  * This doubles the memory requirements of the program, but in practice
  * we only call this on datastructures that are smaller than our assumed
  * machine memory so it works.
@@ -185,32 +182,36 @@ pub fn to_bytes(input: &[u64], size_width: usize) -> Vec<u8> {
 pub fn from_bytes(input: Vec<u8>, size_width: usize) -> Vec<u64> {
     println!("S {}", input.len());
     assert!(input.len() % size_width == 0);
-    let mut bytes:Vec<u64> = Vec::with_capacity(input.len()/size_width);
+    let mut bytes: Vec<u64> = Vec::with_capacity(input.len() / size_width);
 
     let mut tmp = [0u8; 8];
     // todo learn rust macros, hope they're half as good as lisp marcos
     // and if they are then come back and optimize this
-    for i in 0..input.len()/size_width {
-        tmp[..size_width].copy_from_slice(&input[i*size_width..i*size_width+size_width]);
+    for i in 0..input.len() / size_width {
+        tmp[..size_width].copy_from_slice(&input[i * size_width..i * size_width + size_width]);
         bytes.push(u64::from_le_bytes(tmp));
     }
-    
+
     bytes
 }
 
 /* For a suffix array, just compute A[i], but load off disk because A is biiiiiiigggggg. */
-fn table_load_disk(table:&mut BufReader<File>,
-                   index: usize,
-                   size_width: usize) -> usize{
-    table.seek(std::io::SeekFrom::Start ((index*size_width) as u64)).expect ("Seek failed!");
+fn table_load_disk(table: &mut BufReader<File>, index: usize, size_width: usize) -> usize {
+    table
+        .seek(std::io::SeekFrom::Start((index * size_width) as u64))
+        .expect("Seek failed!");
     let mut tmp = [0u8; 8];
     table.read_exact(&mut tmp[..size_width]).unwrap();
     return u64::from_le_bytes(tmp) as usize;
 }
 
 /* Binary search to find where query happens to exist in text */
-fn off_disk_position(text: &[u8], table: &mut BufReader<File>,
-                     query: &[u8], size_width: usize) -> usize {
+fn off_disk_position(
+    text: &[u8],
+    table: &mut BufReader<File>,
+    query: &[u8],
+    size_width: usize,
+) -> usize {
     let (mut left, mut right) = (0, text.len());
     while left < right {
         let mid = (left + right) / 2;
@@ -232,25 +233,28 @@ fn off_disk_position(text: &[u8], table: &mut BufReader<File>,
 struct TableStream {
     file: BufReader<File>,
     cache: [u8; 8],
-    size_width: usize
+    size_width: usize,
 }
 
 /* Make a table from a file path and a given offset into the table */
-fn make_table(path: std::string::String,
-              offset: usize,
-              size_width: usize) -> TableStream {
+fn make_table(path: std::string::String, offset: usize, size_width: usize) -> TableStream {
     let mut table = TableStream {
-        file: std::io::BufReader::with_capacity(1024*1024, fs::File::open(path).unwrap()),
+        file: std::io::BufReader::with_capacity(1024 * 1024, fs::File::open(path).unwrap()),
         cache: [0u8; 8],
-        size_width: size_width
+        size_width: size_width,
     };
-    table.file.seek (std::io::SeekFrom::Start ((offset*size_width) as u64)).expect ("Seek failed!");
+    table
+        .file
+        .seek(std::io::SeekFrom::Start((offset * size_width) as u64))
+        .expect("Seek failed!");
     return table;
 }
 
 /* Get the next word from the suffix table. */
-fn get_next_pointer_from_table_canfail(tablestream:&mut TableStream) -> u64 {
-    let ok = tablestream.file.read_exact(&mut tablestream.cache[..tablestream.size_width]);
+fn get_next_pointer_from_table_canfail(tablestream: &mut TableStream) -> u64 {
+    let ok = tablestream
+        .file
+        .read_exact(&mut tablestream.cache[..tablestream.size_width]);
     let bad = match ok {
         Ok(_) => false,
         Err(_) => true,
@@ -262,8 +266,7 @@ fn get_next_pointer_from_table_canfail(tablestream:&mut TableStream) -> u64 {
     return out;
 }
 
-
-fn get_next_pointer_from_table(tablestream:&mut TableStream) -> u64 {
+fn get_next_pointer_from_table(tablestream: &mut TableStream) -> u64 {
     let r = get_next_pointer_from_table_canfail(tablestream);
     if r == std::u64::MAX {
         panic!("Reached EOF badly");
@@ -271,15 +274,15 @@ fn get_next_pointer_from_table(tablestream:&mut TableStream) -> u64 {
     return r;
 }
 
-fn table_load_filebuffer(table:&filebuffer::FileBuffer, index:usize, width: usize) -> usize{
+fn table_load_filebuffer(table: &filebuffer::FileBuffer, index: usize, width: usize) -> usize {
     let mut tmp = [0u8; 8];
-    tmp[..width].copy_from_slice(&table[index*width..index*width+width]);
+    tmp[..width].copy_from_slice(&table[index * width..index * width + width]);
     return u64::from_le_bytes(tmp) as usize;
 }
 
-fn table_load(table:&[u8], index:usize, width: usize) -> usize{
+fn table_load(table: &[u8], index: usize, width: usize) -> usize {
     let mut tmp = [0u8; 8];
-    tmp[..width].copy_from_slice(&table[index*width..index*width+width]);
+    tmp[..width].copy_from_slice(&table[index * width..index * width + width]);
     return u64::from_le_bytes(tmp) as usize;
 }
 
@@ -290,25 +293,27 @@ fn table_load(table:&[u8], index:usize, width: usize) -> usize{
  * where the string occurrs. If it doesn't exist then return 0.
  * Then, binary search again to find the last location it occurrs.
  * Return the difference between the two.
- */ 
-fn count_occurances(text: &filebuffer::FileBuffer,
-                    size_text: u64,
-                    table: &filebuffer::FileBuffer,
-                    size: u64,
-                    str: &[u8],
-                    size_width: usize,
-                    print_where: bool) -> u64 {
+ */
+fn count_occurances(
+    text: &filebuffer::FileBuffer,
+    size_text: u64,
+    table: &filebuffer::FileBuffer,
+    size: u64,
+    str: &[u8],
+    size_width: usize,
+    print_where: bool,
+) -> u64 {
     let mut buf: &[u8];
     assert!(size % (size_width as u64) == 0);
 
     let mut low = 0;
-    let mut high = size/(size_width as u64);
+    let mut high = size / (size_width as u64);
     while low < high {
-        let mid = (high+low)/2;
+        let mid = (high + low) / 2;
         let pos = table_load_filebuffer(&table, mid as usize, size_width);
 
         if pos + str.len() < size_text as usize {
-            buf = &text[pos..pos+str.len()];
+            buf = &text[pos..pos + str.len()];
         } else {
             buf = &text[pos..size_text as usize];
         }
@@ -316,10 +321,10 @@ fn count_occurances(text: &filebuffer::FileBuffer,
         if str <= &buf {
             high = mid;
         } else {
-            low = mid+1;
+            low = mid + 1;
         }
     }
-    if low == size/(size_width as u64) {
+    if low == size / (size_width as u64) {
         return 0;
     }
 
@@ -327,7 +332,7 @@ fn count_occurances(text: &filebuffer::FileBuffer,
 
     let pos = table_load_filebuffer(&table, low as usize, size_width);
     if pos + str.len() < size_text as usize {
-        buf = &text[pos..pos+str.len()];
+        buf = &text[pos..pos + str.len()];
     } else {
         buf = &text[pos..size_text as usize];
     }
@@ -335,14 +340,14 @@ fn count_occurances(text: &filebuffer::FileBuffer,
     if str != buf {
         return 0; // not found
     }
-    
-    high = size/(size_width as u64);
+
+    high = size / (size_width as u64);
     while low < high {
-        let mid = (high+low)/2;
+        let mid = (high + low) / 2;
         let pos = table_load_filebuffer(&table, mid as usize, size_width);
 
         if pos + str.len() < size_text as usize {
-            buf = &text[pos..pos+str.len()];
+            buf = &text[pos..pos + str.len()];
         } else {
             buf = &text[pos..size_text as usize];
         }
@@ -350,39 +355,41 @@ fn count_occurances(text: &filebuffer::FileBuffer,
         if str != buf {
             high = mid;
         } else {
-            low = mid+1;
+            low = mid + 1;
         }
     }
 
     if print_where {
         for i in start..low {
-           let pos = table_load_filebuffer(&table, i as usize, size_width);
+            let pos = table_load_filebuffer(&table, i as usize, size_width);
             println!("Found at: {}", pos);
-	    break;
-       }
+            break;
+        }
     }
 
-    return low-start;
+    return low - start;
 }
 
-fn count_occurances_memory(text: &[u8],
-                    size_text: u64,
-                    table: &[u8],
-                    size: u64,
-                    str: &[u8],
-                    size_width: usize,
-                    print_where: bool) -> u64 {
+fn count_occurances_memory(
+    text: &[u8],
+    size_text: u64,
+    table: &[u8],
+    size: u64,
+    str: &[u8],
+    size_width: usize,
+    print_where: bool,
+) -> u64 {
     let mut buf: &[u8];
     assert!(size % (size_width as u64) == 0);
 
     let mut low = 0;
-    let mut high = size/(size_width as u64);
+    let mut high = size / (size_width as u64);
     while low < high {
-        let mid = (high+low)/2;
+        let mid = (high + low) / 2;
         let pos = table_load(&table, mid as usize, size_width);
 
         if pos + str.len() < size_text as usize {
-            buf = &text[pos..pos+str.len()];
+            buf = &text[pos..pos + str.len()];
         } else {
             buf = &text[pos..size_text as usize];
         }
@@ -390,10 +397,10 @@ fn count_occurances_memory(text: &[u8],
         if str <= &buf {
             high = mid;
         } else {
-            low = mid+1;
+            low = mid + 1;
         }
     }
-    if low == size/(size_width as u64) {
+    if low == size / (size_width as u64) {
         return 0;
     }
 
@@ -401,7 +408,7 @@ fn count_occurances_memory(text: &[u8],
 
     let pos = table_load(&table, low as usize, size_width);
     if pos + str.len() < size_text as usize {
-        buf = &text[pos..pos+str.len()];
+        buf = &text[pos..pos + str.len()];
     } else {
         buf = &text[pos..size_text as usize];
     }
@@ -409,14 +416,14 @@ fn count_occurances_memory(text: &[u8],
     if str != buf {
         return 0; // not found
     }
-    
-    high = size/(size_width as u64);
+
+    high = size / (size_width as u64);
     while low < high {
-        let mid = (high+low)/2;
+        let mid = (high + low) / 2;
         let pos = table_load(&table, mid as usize, size_width);
 
         if pos + str.len() < size_text as usize {
-            buf = &text[pos..pos+str.len()];
+            buf = &text[pos..pos + str.len()];
         } else {
             buf = &text[pos..size_text as usize];
         }
@@ -424,38 +431,40 @@ fn count_occurances_memory(text: &[u8],
         if str != buf {
             high = mid;
         } else {
-            low = mid+1;
+            low = mid + 1;
         }
     }
 
     if print_where {
         for i in start..low {
-           let pos = table_load(&table, i as usize, size_width);
-           println!("Found at: {}", pos);
-	    break;
-       }
+            let pos = table_load(&table, i as usize, size_width);
+            println!("Found at: {}", pos);
+            break;
+        }
     }
 
-    return low-start;
+    return low - start;
 }
 
-fn is_present_memory(text: &[u8],
-                    size_text: u64,
-                    table: &[u8],
-                    size: u64,
-                    str: &[u8],
-                    size_width: usize) -> u64 {
+fn is_present_memory(
+    text: &[u8],
+    size_text: u64,
+    table: &[u8],
+    size: u64,
+    str: &[u8],
+    size_width: usize,
+) -> u64 {
     let mut buf: &[u8];
     assert!(size % (size_width as u64) == 0);
 
     let mut low = 0;
-    let mut high = size/(size_width as u64);
+    let mut high = size / (size_width as u64);
     while low < high {
-        let mid = (high+low)/2;
+        let mid = (high + low) / 2;
         let pos = table_load(&table, mid as usize, size_width);
 
         if pos + str.len() < size_text as usize {
-            buf = &text[pos..pos+str.len()];
+            buf = &text[pos..pos + str.len()];
         } else {
             buf = &text[pos..size_text as usize];
         }
@@ -463,16 +472,16 @@ fn is_present_memory(text: &[u8],
         if str <= &buf {
             high = mid;
         } else {
-            low = mid+1;
+            low = mid + 1;
         }
     }
 
-    if low*(size_width as u64)+(size_width as u64) >= (table.len() as u64) {
-	return 0;
+    if low * (size_width as u64) + (size_width as u64) >= (table.len() as u64) {
+        return 0;
     }
     let pos = table_load(&table, low as usize, size_width);
     if pos + str.len() < size_text as usize {
-        buf = &text[pos..pos+str.len()];
+        buf = &text[pos..pos + str.len()];
     } else {
         buf = &text[pos..size_text as usize];
     }
@@ -480,28 +489,29 @@ fn is_present_memory(text: &[u8],
     if str != buf {
         return 0; // not found
     }
-    
+
     return 1;
 }
 
-fn find_index_memory(text: &[u8],
-                     size_text: u64,
-                     table: &[u8],
-                     size: u64,
-                     str: &[u8],
-                     size_width: usize) -> u64 {
+fn find_index_memory(
+    text: &[u8],
+    size_text: u64,
+    table: &[u8],
+    size: u64,
+    str: &[u8],
+    size_width: usize,
+) -> u64 {
     let mut buf: &[u8];
     assert!(size % (size_width as u64) == 0);
 
     let mut low = 0;
-    let mut high = size/(size_width as u64);
+    let mut high = size / (size_width as u64);
     while low < high {
-	
-        let mid = (high+low)/2;
+        let mid = (high + low) / 2;
         let pos = table_load(&table, mid as usize, size_width);
 
         if pos + str.len() < size_text as usize {
-            buf = &text[pos..pos+str.len()];
+            buf = &text[pos..pos + str.len()];
         } else {
             buf = &text[pos..size_text as usize];
         }
@@ -509,32 +519,34 @@ fn find_index_memory(text: &[u8],
         if str <= &buf {
             high = mid;
         } else {
-            low = mid+1;
+            low = mid + 1;
         }
     }
 
-    if low*(size_width as u64)+(size_width as u64) >= (table.len() as u64) {
-	return u64::MAX;
+    if low * (size_width as u64) + (size_width as u64) >= (table.len() as u64) {
+        return u64::MAX;
     }
-    let pos = table_load(&table, (low-1) as usize, size_width);
+    let pos = table_load(&table, (low - 1) as usize, size_width);
     let pos2 = table_load(&table, (low) as usize, size_width);
 
     let other = &text[pos as usize..];
     let other2 = &text[pos2 as usize..];
-    
-    let maybe_match_len1 = (0..65536).find(|&j| !(j < other.len() && j < str.len() && str[j] == other[j]));
-    let maybe_match_len2 = (0..65536).find(|&j| !(j < other2.len() && j < str.len() && str[j] == other2[j]));
+
+    let maybe_match_len1 =
+        (0..65536).find(|&j| !(j < other.len() && j < str.len() && str[j] == other[j]));
+    let maybe_match_len2 =
+        (0..65536).find(|&j| !(j < other2.len() && j < str.len() && str[j] == other2[j]));
 
     if let Some(match_len1) = maybe_match_len1 {
-	if let Some(match_len2) = maybe_match_len2 {
-	    return std::cmp::max(match_len1, match_len2) as u64;
-	}
+        if let Some(match_len2) = maybe_match_len2 {
+            return std::cmp::max(match_len1, match_len2) as u64;
+        }
     }
-    
+
     return 0;
 }
 
-/* 
+/*
  * Create a suffix array for a given file in one go.
  * Calling this method is memory heavy---it's technically linear in the
  * length of the file, but the constant is quite big.
@@ -547,33 +559,46 @@ fn find_index_memory(text: &[u8],
  * byte of the original). In order to save space, if it turns out we only need
  * 32 bits to uniquely point into the data file then we serialize using fewer
  * bits (or 24, or 40, or ...), but in memory we always use a u64.
- * 
+ *
  * If the file does not fit into memory, then instead you should use the
  * alternate save_part and then merge_parallel in two steps. See the comments
  * below for how those work.
  */
-fn cmd_make(fpath: &String)   -> std::io::Result<()> {
+fn cmd_make(fpath: &String) -> std::io::Result<()> {
     let now = Instant::now();
-    println!("Reading the dataset at time t={}ms", now.elapsed().as_millis());
+    println!(
+        "Reading the dataset at time t={}ms",
+        now.elapsed().as_millis()
+    );
     let mut text_ = Vec::with_capacity(std::fs::metadata(fpath.clone()).unwrap().len() as usize);
-    fs::File::open(fpath.clone()).unwrap().read_to_end(&mut text_)?;
+    fs::File::open(fpath.clone())
+        .unwrap()
+        .read_to_end(&mut text_)?;
     let text = &text_;
-    println!("Done reading the dataset at time t={}ms", now.elapsed().as_millis());
+    println!(
+        "Done reading the dataset at time t={}ms",
+        now.elapsed().as_millis()
+    );
 
     println!("... and now starting the suffix array construction.");
-    
-    
+
     let st = table::SuffixTable::new(text);
-    println!("Done building suffix array at t={}ms",now.elapsed().as_millis());
+    println!(
+        "Done building suffix array at t={}ms",
+        now.elapsed().as_millis()
+    );
     let parts = st.into_parts();
     let table = parts.1;
 
-    let ratio = ((text.len() as f64).log2()/8.0).ceil() as usize;
+    let ratio = ((text.len() as f64).log2() / 8.0).ceil() as usize;
     println!("Ratio: {}", ratio);
-    
+
     let mut buffer = File::create(fpath.clone() + ".table.bin")?;
     let bufout = to_bytes(&table, ratio);
-    println!("Writing the suffix array at time t={}ms", now.elapsed().as_millis());
+    println!(
+        "Writing the suffix array at time t={}ms",
+        now.elapsed().as_millis()
+    );
     buffer.write_all(&bufout)?;
     println!("And finished at time t={}ms", now.elapsed().as_millis());
     Ok(())
@@ -582,56 +607,71 @@ fn cmd_make(fpath: &String)   -> std::io::Result<()> {
 /*
  * Create a suffix array for a subsequence of bytes.
  * As with save, this method is linear in the number of bytes that are
- * being saved but the constant is rather high. This method does exactly 
+ * being saved but the constant is rather high. This method does exactly
  * the same thing as save except on a range of bytes.
  */
-fn cmd_make_part(fpath: &String, start: u64, end: u64)   -> std::io::Result<()> {
+fn cmd_make_part(fpath: &String, start: u64, end: u64) -> std::io::Result<()> {
     let now = Instant::now();
     println!("Opening up the dataset files");
 
     let space_available = std::fs::metadata(fpath.clone()).unwrap().len() as u64;
     assert!(start < end);
     assert!(end <= space_available);
-    
-    let mut text_ = vec![0u8; (end-start) as usize];
+
+    let mut text_ = vec![0u8; (end - start) as usize];
     let mut file = fs::File::open(fpath.clone()).unwrap();
     println!("Loading part of file from byte {} to {}", start, end);
-    file.seek(std::io::SeekFrom::Start(start)).expect ("Seek failed!");
+    file.seek(std::io::SeekFrom::Start(start))
+        .expect("Seek failed!");
     file.read_exact(&mut text_).unwrap();
     let text = &text_;
-    println!("Done reading the dataset at time t={}ms", now.elapsed().as_millis());
+    println!(
+        "Done reading the dataset at time t={}ms",
+        now.elapsed().as_millis()
+    );
     println!("... and now starting the suffix array construction.");
-    
+
     let st = table::SuffixTable::new(text);
-    println!("Done building suffix array at t={}ms",now.elapsed().as_millis());
+    println!(
+        "Done building suffix array at t={}ms",
+        now.elapsed().as_millis()
+    );
     let parts = st.into_parts();
     let table = parts.1;
 
-    let ratio = ((text.len() as f64).log2()/8.0).ceil() as usize;
+    let ratio = ((text.len() as f64).log2() / 8.0).ceil() as usize;
     println!("Ratio: {}", ratio);
-    
+
     let mut buffer = File::create(format!("{}.part.{}-{}.table.bin", fpath, start, end))?;
     let mut buffer2 = File::create(format!("{}.part.{}-{}", fpath, start, end))?;
     let bufout = to_bytes(&table, ratio);
-    println!("Writing the suffix array at time t={}ms", now.elapsed().as_millis());
+    println!(
+        "Writing the suffix array at time t={}ms",
+        now.elapsed().as_millis()
+    );
     buffer.write_all(&bufout)?;
     buffer2.write_all(text)?;
     println!("And finished at time t={}ms", now.elapsed().as_millis());
     Ok(())
-}    
+}
 
 /*
  * Count how many times a particular string has occurred in the dataset.
- * 
+ *
  * This is the easiest method to understand. It just performs binary search on the
  * suffix array and uses it exactly as it was designed. It will output the number of counts.
- * 
+ *
  * NOTE: This function allows overlapping sequences to count as different duplicates.
  * So if our string is `aaaa` and we count how many times `aa` occurrs, it will return 3,
  * not 2. This is different from python's "aaaa".count("aa") which will say 2.
  * This may or may not be a problem for you. But if is is, that's you're problem, not mine.
  */
-fn cmd_count_occurrences(fpath: &String, querypath: &String, print_location: bool, load_disk: bool)   -> std::io::Result<()> {
+fn cmd_count_occurrences(
+    fpath: &String,
+    querypath: &String,
+    print_location: bool,
+    load_disk: bool,
+) -> std::io::Result<()> {
     /* Count the numberof times a particular sequence occurs in the table.
      */
 
@@ -641,30 +681,51 @@ fn cmd_count_occurrences(fpath: &String, querypath: &String, print_location: boo
     let size_table = metadata_table.len();
 
     let mut str = Vec::with_capacity(std::fs::metadata(querypath.clone()).unwrap().len() as usize);
-    fs::File::open(querypath.clone()).unwrap().read_to_end(&mut str)?;
+    fs::File::open(querypath.clone())
+        .unwrap()
+        .read_to_end(&mut str)?;
 
     let occurances;
 
     if load_disk {
-    let text = filebuffer::FileBuffer::open(fpath).unwrap();
-    let table = filebuffer::FileBuffer::open(format!("{}.table.bin", fpath)).unwrap();
+        let text = filebuffer::FileBuffer::open(fpath).unwrap();
+        let table = filebuffer::FileBuffer::open(format!("{}.table.bin", fpath)).unwrap();
 
-    assert!(size_table % size_text == 0);
-    let size_width = size_table / size_text;
+        assert!(size_table % size_text == 0);
+        let size_width = size_table / size_text;
 
-    occurances = count_occurances_memory(&text, size_text,  &table, size_table, &str[0..str.len()], size_width as usize, print_location);
+        occurances = count_occurances_memory(
+            &text,
+            size_text,
+            &table,
+            size_table,
+            &str[0..str.len()],
+            size_width as usize,
+            print_location,
+        );
     } else {
-    
-    let mut text = Vec::with_capacity(size_text as usize);
-    fs::File::open(format!("{}", fpath)).unwrap().read_to_end(&mut text)?;
+        let mut text = Vec::with_capacity(size_text as usize);
+        fs::File::open(format!("{}", fpath))
+            .unwrap()
+            .read_to_end(&mut text)?;
 
-    let mut table = Vec::with_capacity(size_table as usize);
-    fs::File::open(format!("{}.table.bin", fpath)).unwrap().read_to_end(&mut table)?;
+        let mut table = Vec::with_capacity(size_table as usize);
+        fs::File::open(format!("{}.table.bin", fpath))
+            .unwrap()
+            .read_to_end(&mut table)?;
 
-    assert!(size_table % size_text == 0);
-    let size_width = size_table / size_text;
+        assert!(size_table % size_text == 0);
+        let size_width = size_table / size_text;
 
-    occurances = count_occurances_memory(&text, size_text,  &table, size_table, &str[0..str.len()], size_width as usize, print_location);
+        occurances = count_occurances_memory(
+            &text,
+            size_text,
+            &table,
+            size_table,
+            &str[0..str.len()],
+            size_width as usize,
+            print_location,
+        );
     }
 
     println!("Number of times present: {}\n", occurances);
@@ -675,146 +736,198 @@ fn cmd_count_occurrences(fpath: &String, querypath: &String, print_location: boo
  * Count the number of times a particular sequence occurs in the table.
  * (for multiple queries)
  */
-fn cmd_count_occurrences_multi(fpath: &String, querypath: &String, load_disk: bool)   -> std::io::Result<()> {
-
+fn cmd_count_occurrences_multi(
+    fpath: &String,
+    querypath: &String,
+    load_disk: bool,
+) -> std::io::Result<()> {
     let metadata_text = fs::metadata(format!("{}", fpath))?;
     let metadata_table = fs::metadata(format!("{}.table.bin", fpath))?;
     let size_text = metadata_text.len();
     let size_table = metadata_table.len();
 
-
     let mut str = Vec::with_capacity(std::fs::metadata(querypath.clone()).unwrap().len() as usize);
-    fs::File::open(querypath.clone()).unwrap().read_to_end(&mut str)?;
+    fs::File::open(querypath.clone())
+        .unwrap()
+        .read_to_end(&mut str)?;
 
     if load_disk {
-	println!("LOAD DISK");
-    let text = filebuffer::FileBuffer::open(fpath).unwrap();
-    let table = filebuffer::FileBuffer::open(format!("{}.table.bin", fpath)).unwrap();
+        println!("LOAD DISK");
+        let text = filebuffer::FileBuffer::open(fpath).unwrap();
+        let table = filebuffer::FileBuffer::open(format!("{}.table.bin", fpath)).unwrap();
 
-    assert!(size_table % size_text == 0);
-    let size_width = size_table / size_text;
+        assert!(size_table % size_text == 0);
+        let size_width = size_table / size_text;
 
-    let mut off = 0;
-    while off < str.len() {
-        let length = u32::from_le_bytes(str[off..off+4].try_into().expect("?")) as usize;
-        off += 4;
+        let mut off = 0;
+        while off < str.len() {
+            let length = u32::from_le_bytes(str[off..off + 4].try_into().expect("?")) as usize;
+            off += 4;
 
-        let occurances = count_occurances(&text, size_text, &table, size_table, &str[off..off+length], size_width as usize, false);
-        off += length;
-        println!("Number of times present: {}", occurances);
-    }
-    } else {    
+            let occurances = count_occurances(
+                &text,
+                size_text,
+                &table,
+                size_table,
+                &str[off..off + length],
+                size_width as usize,
+                false,
+            );
+            off += length;
+            println!("Number of times present: {}", occurances);
+        }
+    } else {
+        let mut text = Vec::with_capacity(size_text as usize);
+        fs::File::open(format!("{}", fpath))
+            .unwrap()
+            .read_to_end(&mut text)?;
 
-    let mut text = Vec::with_capacity(size_text as usize);
-    fs::File::open(format!("{}", fpath)).unwrap().read_to_end(&mut text)?;
+        let mut table = Vec::with_capacity(size_table as usize);
+        fs::File::open(format!("{}.table.bin", fpath))
+            .unwrap()
+            .read_to_end(&mut table)?;
 
-    let mut table = Vec::with_capacity(size_table as usize);
-    fs::File::open(format!("{}.table.bin", fpath)).unwrap().read_to_end(&mut table)?;
+        assert!(size_table % size_text == 0);
+        let size_width = size_table / size_text;
 
-    assert!(size_table % size_text == 0);
-    let size_width = size_table / size_text;
+        let mut off = 0;
+        while off < str.len() {
+            let length = u32::from_le_bytes(str[off..off + 4].try_into().expect("?")) as usize;
+            off += 4;
 
-    let mut off = 0;
-    while off < str.len() {
-        let length = u32::from_le_bytes(str[off..off+4].try_into().expect("?")) as usize;
-        off += 4;
-
-        let occurances = count_occurances_memory(&text, size_text, &table, size_table, &str[off..off+length], size_width as usize, false);
-        off += length;
-        println!("Number of times present: {}", occurances);
-    }
+            let occurances = count_occurances_memory(
+                &text,
+                size_text,
+                &table,
+                size_table,
+                &str[off..off + length],
+                size_width as usize,
+                false,
+            );
+            off += length;
+            println!("Number of times present: {}", occurances);
+        }
     }
     Ok(())
 }
 
-fn cmd_find_training_data_2(fpath: &String, querypaths: &Vec<String>)   -> std::io::Result<()> {
-
+fn cmd_find_training_data_2(fpath: &String, querypaths: &Vec<String>) -> std::io::Result<()> {
     let metadata_text = fs::metadata(format!("{}", fpath))?;
     let metadata_table = fs::metadata(format!("{}.table.bin", fpath))?;
     let size_text = metadata_text.len();
     let size_table = metadata_table.len();
 
-
     println!("Load 1");
     let mut text = Vec::with_capacity(size_text as usize);
-    fs::File::open(format!("{}", fpath)).unwrap().read_to_end(&mut text)?;
+    fs::File::open(format!("{}", fpath))
+        .unwrap()
+        .read_to_end(&mut text)?;
 
     println!("Load 2");
     let mut table = Vec::with_capacity(size_table as usize);
-    fs::File::open(format!("{}.table.bin", fpath)).unwrap().read_to_end(&mut table)?;
+    fs::File::open(format!("{}.table.bin", fpath))
+        .unwrap()
+        .read_to_end(&mut table)?;
 
     println!("Finished load");
-    
+
     assert!(size_table % size_text == 0);
     let size_width = size_table / size_text;
 
     for querypath in querypaths {
-	println!("Processing {:?}", querypath);
-	let mut str = Vec::with_capacity(std::fs::metadata(querypath.clone()).unwrap().len() as usize);
-	fs::File::open(querypath.clone()).unwrap().read_to_end(&mut str)?;
+        println!("Processing {:?}", querypath);
+        let mut str =
+            Vec::with_capacity(std::fs::metadata(querypath.clone()).unwrap().len() as usize);
+        fs::File::open(querypath.clone())
+            .unwrap()
+            .read_to_end(&mut str)?;
 
-	fn worker(text:&[u8], table:&[u8], str:&[u8],
-		  size_width: u64, size_text: u64, size_table: u64,
-		  fpath: &String, querypath: &String, 
-		  start:usize, end:usize) -> usize {
-	
-	    let mut count = vec![0u64; (end-start)/2 as usize];
-	    for off in (start..end).step_by(2) {
+        fn worker(
+            text: &[u8],
+            table: &[u8],
+            str: &[u8],
+            size_width: u64,
+            size_text: u64,
+            size_table: u64,
+            fpath: &String,
+            querypath: &String,
+            start: usize,
+            end: usize,
+        ) -> usize {
+            let mut count = vec![0u64; (end - start) / 2 as usize];
+            for off in (start..end).step_by(2) {
+                let match_len = find_index_memory(
+                    text,
+                    size_text,
+                    table,
+                    size_table,
+                    &str[off..],
+                    size_width as usize,
+                );
+                //println!("Byte {:x} is {}", off/2 - start/2, match_len/2);
+                //println!("Size {}", match_len);
+                if match_len > 7 {
+                    count[off / 2 - start / 2] = std::cmp::min(match_len / 2, 65536) as u64;
+                }
+            }
 
-		let match_len = find_index_memory(text, size_text, table, size_table, &str[off..], size_width as usize);
-		//println!("Byte {:x} is {}", off/2 - start/2, match_len/2);
-		//println!("Size {}", match_len);
-		if match_len > 7 {
-		    count[off/2 - start/2] = std::cmp::min(match_len/2, 65536) as u64;
-		}
-	    }
+            let mut buffer = File::create(format!(
+                "{}_{}_{:012}_{:012}",
+                querypath,
+                fpath.split("/").last().unwrap(),
+                start,
+                end
+            ))
+            .unwrap();
+            let bufout = to_bytes(&count, 2);
+            buffer.write_all(&bufout).unwrap();
+            return 0;
+        }
 
-	    let mut buffer = File::create(format!("{}_{}_{:012}_{:012}", querypath, fpath.split("/").last().unwrap(), start, end)).unwrap();
-	    let bufout = to_bytes(&count, 2);
-	    buffer.write_all(&bufout).unwrap();
-	    return 0;
-	}
+        let num_threads = 176;
+        let increment: i64 = (str.len() as i64 - num_threads) / num_threads / 2;
+        let _answer = crossbeam::scope(|scope| {
+            let mut result = Vec::with_capacity(num_threads as usize);
+            let text = &text;
+            let table = &table;
+            let querypath = &querypath;
+            let fpath = &fpath;
+            let str = &str;
+            for i in 0..176 {
+                let one_result = scope.spawn(move || {
+                    return worker(
+                        text,
+                        table,
+                        str,
+                        size_width,
+                        size_text,
+                        size_table,
+                        fpath,
+                        querypath,
+                        2 * std::cmp::max(0i64, i * increment) as usize,
+                        2 * std::cmp::min(((i + 1) * increment) as usize, str.len()),
+                    );
+                });
+                result.push(one_result);
+            }
 
-	let num_threads = 176;
-	let increment:i64 = (str.len() as i64-num_threads)/num_threads/2;
-	let _answer = crossbeam::scope(|scope| {
-	    let mut result = Vec::with_capacity(num_threads as usize);
-	    let text = &text;
-	    let table = &table;
-	    let querypath = &querypath;
-	    let fpath = &fpath;
-	    let str = &str;
-	    for i in 0..176 {
-		let one_result = scope.spawn(move || {
-		    return worker(text, table, str,
-				  size_width, size_text, size_table,
-				  fpath, querypath, 
-				  2*std::cmp::max(0i64,i*increment) as usize,
-				  2*std::cmp::min(((i+1)*increment) as usize, str.len()))
-		});
-		result.push(one_result);
-	    }
-
-	    let thread_sum:usize = result.into_iter().map(|t| t.join()).sum();
-	});
-
-	
+            let thread_sum: usize = result.into_iter().map(|t| t.join()).sum();
+        });
     }
-    
+
     Ok(())
 }
 
-
-/* 
+/*
  * Given a string S and suffix array A, compute statistics about how many
  * sequences in A are duplicated (and do it using as many threads as possible).
- * 
+ *
  * The basic algorithm is simple. For every pair of items (i,i+1) in the
  * suffix array, we compare the suffixes S[A[i]..] and S[A[i+i]..] and count
  * how many characters they have in common. We then report various statistics
  * about this (e.g., the length of the match, which sequences match each other
  * with at least T tokens, etc).
- * 
+ *
  * The first complication is that we can't load all of A into memory at once.
  * This is too big. (e.g., the suffix array for C4 is 2.7 terabytes (!).
  * We might be able to fit 345GB in memory on current hardware, but not
@@ -824,21 +937,21 @@ fn cmd_find_training_data_2(fpath: &String, querypaths: &Vec<String>)   -> std::
  *
  * Fortunately our algorithm doesn't require random access into A, so we can
  * just stream it off disk and then immediately throw away the old data.
- * 
+ *
  * The second complication is that we want this to be fast. Very fast. So
  * we're going to parallelize the algorithm over as many threads as possible.
  * Fortunately this is Rust, and not Python, so the GIL is not going to make
  * life terrible. We set up one copy of the string S in memory, and then we
  * can have each of the threads in parallel stream over A starting at different
- * offsets. 
+ * offsets.
  *
  * The output of this algorithm is a bunch of files saved to cache_dir named
  * /cache_dir/dups_S_i-j
  * /cache_dir/sizes_S_i-j
  * Where i-j is the range of bytes that are covered by this file.
- * The dups file stores just a list of 8-byte values [x_i] of indexs where S[x..x+T] 
+ * The dups file stores just a list of 8-byte values [x_i] of indexs where S[x..x+T]
  * is duplicated elsewhere in the dataset.
- * 
+ *
  * Because the list is produced in lexical order, the duplicates for the same string
  * will all be sequential in the list, and this is where the sizes file comes in.
  * The sizes file says which duplicates from the dups file correspond to the same "cluster".
@@ -846,8 +959,14 @@ fn cmd_find_training_data_2(fpath: &String, querypaths: &Vec<String>)   -> std::
  * to the same string that's repeated 5 times, and the next 2 entries in the dups file are
  * a pair of repeated strings.
  */
-fn cmd_self_similar(data_file: &String, length_threshold: &usize, frequency_threshold: &usize,
-                    only_save_one: &bool, cache_dir: &String, num_threads: i64)  -> std::io::Result<()> {
+fn cmd_self_similar(
+    data_file: &String,
+    length_threshold: &usize,
+    frequency_threshold: &usize,
+    only_save_one: &bool,
+    cache_dir: &String,
+    num_threads: i64,
+) -> std::io::Result<()> {
     println!("Start load!");
 
     let text = filebuffer::FileBuffer::open(data_file).unwrap();
@@ -855,39 +974,62 @@ fn cmd_self_similar(data_file: &String, length_threshold: &usize, frequency_thre
     let metadata = fs::metadata(format!("{}.table.bin", data_file))?;
 
     assert!(metadata.len() % (text.len() as u64) == 0);
-    
-    let ratio = metadata.len()/(text.len() as u64);
+
+    let ratio = metadata.len() / (text.len() as u64);
 
     if !Path::new(&cache_dir).exists() {
         fs::create_dir(cache_dir)?;
     }
 
-    fn worker(text:&[u8], start:usize, end:usize,
-              length_threshold: usize, frequency_threshold: usize, only_save_one: bool,
-              data_file: String, cache_dir: String,
-              ratio: usize) -> usize {
+    fn worker(
+        text: &[u8],
+        start: usize,
+        end: usize,
+        length_threshold: usize,
+        frequency_threshold: usize,
+        only_save_one: bool,
+        data_file: String,
+        cache_dir: String,
+        ratio: usize,
+    ) -> usize {
         let mut table = make_table(format!("{}.table.bin", data_file), start, ratio);
         let mut prev_location = get_next_pointer_from_table(&mut table);
 
-        let mut outfile = std::io::BufWriter::new(fs::File::create(
-            format!("{}/dups_{}_{}-{}", cache_dir,
-                    data_file.split("/").last().unwrap(), start, end)).unwrap());
-        let mut outfile_sizes = std::io::BufWriter::new(fs::File::create(
-            format!("{}/sizes_{}_{}-{}", cache_dir,
-                    data_file.split("/").last().unwrap(), start, end)).unwrap());
+        let mut outfile = std::io::BufWriter::new(
+            fs::File::create(format!(
+                "{}/dups_{}_{}-{}",
+                cache_dir,
+                data_file.split("/").last().unwrap(),
+                start,
+                end
+            ))
+            .unwrap(),
+        );
+        let mut outfile_sizes = std::io::BufWriter::new(
+            fs::File::create(format!(
+                "{}/sizes_{}_{}-{}",
+                cache_dir,
+                data_file.split("/").last().unwrap(),
+                start,
+                end
+            ))
+            .unwrap(),
+        );
 
         let mut duplicate_count = 0;
         let mut i = start;
-        let mut pairs:Vec<u64> = Vec::with_capacity(4);
-        
+        let mut pairs: Vec<u64> = Vec::with_capacity(4);
+
         while i < end {
-            if i%1000000000 == 0 { println!("{} / {} ", i-start, end-start); }
+            if i % 1000000000 == 0 {
+                println!("{} / {} ", i - start, end - start);
+            }
             let suf1 = &text[prev_location as usize..];
-            
+
             let mut cur_location;
 
             let mut first = true;
-            
+
             loop {
                 cur_location = get_next_pointer_from_table_canfail(&mut table);
                 i += 1;
@@ -897,7 +1039,9 @@ fn cmd_self_similar(data_file: &String, length_threshold: &usize, frequency_thre
                 }
 
                 let suf2 = &text[cur_location as usize..];
-                let does_match =  suf2.len() >= length_threshold && suf1.len() >= length_threshold && suf1[..length_threshold] == suf2[..length_threshold];
+                let does_match = suf2.len() >= length_threshold
+                    && suf1.len() >= length_threshold
+                    && suf1[..length_threshold] == suf2[..length_threshold];
                 if does_match {
                     if !first {
                         pairs.push(cur_location);
@@ -913,13 +1057,17 @@ fn cmd_self_similar(data_file: &String, length_threshold: &usize, frequency_thre
 
             if pairs.len() > frequency_threshold {
                 if only_save_one {
-                    let seq = &text[pairs[0] as usize..pairs[0] as usize+length_threshold];
-                    if pairs[0]%2 == 0 {
+                    let seq = &text[pairs[0] as usize..pairs[0] as usize + length_threshold];
+                    if pairs[0] % 2 == 0 {
                         outfile.write_all(seq).expect("Ok");
                     }
                 } else {
-                    outfile.write_all(&to_bytes(&pairs[..], ratio)[..]).expect("Ok");
-                    outfile_sizes.write_all(&to_bytes(&[pairs.len() as u64][..], ratio)[..]).expect("Ok");
+                    outfile
+                        .write_all(&to_bytes(&pairs[..], ratio)[..])
+                        .expect("Ok");
+                    outfile_sizes
+                        .write_all(&to_bytes(&[pairs.len() as u64][..], ratio)[..])
+                        .expect("Ok");
                     duplicate_count += pairs.len();
                 }
             }
@@ -933,37 +1081,41 @@ fn cmd_self_similar(data_file: &String, length_threshold: &usize, frequency_thre
 
     let now = Instant::now();
 
-    let increment:i64 = (text.len() as i64-num_threads)/num_threads;
+    let increment: i64 = (text.len() as i64 - num_threads) / num_threads;
     let _answer = crossbeam::scope(|scope| {
         let mut result = Vec::with_capacity(num_threads as usize);
         let text = &text;
         for i in 0..num_threads {
             let one_result = scope.spawn(move || {
-                return worker(text,
-                              std::cmp::max(0i64,i*increment-1) as usize,
-                              std::cmp::min(((i+1)*increment) as usize, text.len()),
-                              *length_threshold, *frequency_threshold, *only_save_one,
-                              data_file.clone(), cache_dir.clone(),
-                              ratio as usize);
+                return worker(
+                    text,
+                    std::cmp::max(0i64, i * increment - 1) as usize,
+                    std::cmp::min(((i + 1) * increment) as usize, text.len()),
+                    *length_threshold,
+                    *frequency_threshold,
+                    *only_save_one,
+                    data_file.clone(),
+                    cache_dir.clone(),
+                    ratio as usize,
+                );
             });
             result.push(one_result);
         }
 
-        let thread_sum:usize = result.into_iter().map(|t| t.join()).sum();
+        let thread_sum: usize = result.into_iter().map(|t| t.join()).sum();
         println!("Duplicates found: {:?}", thread_sum);
-        
     });
 
     println!("Total time taken: {}ms", now.elapsed().as_millis());
-    
+
     Ok(())
 }
 
-/* 
+/*
  * Given a string S1 and suffix array A1, and another string S2 with array A2,
  * find all sequences that are duplicated between S1 and S2 with any particular length.
- * 
- * The basic algorithm is simple, and seems very much like a merge operation. 
+ *
+ * The basic algorithm is simple, and seems very much like a merge operation.
  * Start enumerating all sequences from A1 which gives a sorted enumeration of S1.
  * If S1[A1[0]..] < S2[A2[0]..] then advance the pointer walking S1, otherwise
  * advance the pointer walking S2. If ever S1[A1[i]..A[i]+L] = S2[A2[j]..A2[j]+L]
@@ -972,7 +1124,7 @@ fn cmd_self_similar(data_file: &String, length_threshold: &usize, frequency_thre
  * As with the self-similar comparison, we can't fit A1 or A2 into memory. So do the
  * same streming tricks. And again we want things to go fast, so we're going to run
  * it on as many parallel threads as possible.
- * 
+ *
  * The output of this algorithm is a bunch of files saved to cache_dir named
  * /cache_dir/dups_S1_i-j_S1-k-l
  * /cache_dir/sizes_S2_i-j_S2-k-l
@@ -982,30 +1134,45 @@ fn cmd_self_similar(data_file: &String, length_threshold: &usize, frequency_thre
  * The dups and size file have the same interpretation as before. But this time there are
  * two, one for the A -> B comparison, and another for the B -> A comparison.
  */
-fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &String,
-                      length_threshold: usize, num_threads: i64)  -> std::io::Result<()> {
+fn cmd_across_similar(
+    data_file_1: &String,
+    data_file_2: &String,
+    cache_dir: &String,
+    length_threshold: usize,
+    num_threads: i64,
+) -> std::io::Result<()> {
     let text1 = filebuffer::FileBuffer::open(data_file_1).unwrap();
     let text2 = filebuffer::FileBuffer::open(data_file_2).unwrap();
 
-    let metadata1 = fs::metadata(format!("{}.table.bin", data_file_1)).expect("suffix array exists for arg 0");
-    let metadata2 = fs::metadata(format!("{}.table.bin", data_file_2)).expect("suffix array exists for arg 1");
+    let metadata1 =
+        fs::metadata(format!("{}.table.bin", data_file_1)).expect("suffix array exists for arg 0");
+    let metadata2 =
+        fs::metadata(format!("{}.table.bin", data_file_2)).expect("suffix array exists for arg 1");
 
     assert!(metadata1.len() % (text1.len() as u64) == 0);
-    let ratio1 = metadata1.len()/(text1.len() as u64);
+    let ratio1 = metadata1.len() / (text1.len() as u64);
 
     assert!(metadata2.len() % (text2.len() as u64) == 0);
-    let ratio2 = metadata2.len()/(text2.len() as u64);
+    let ratio2 = metadata2.len() / (text2.len() as u64);
 
     if !Path::new(&cache_dir).exists() {
         fs::create_dir(cache_dir)?;
     }
 
-    fn worker(text1:&[u8], text2:&[u8],
-              start1:usize, end1:usize,
-              start2:usize, end2:usize,
-              data_file_1: String, data_file_2: String, 
-              cache_dir: String, length_threshold: usize,
-              size_width_1: usize, size_width_2: usize) -> usize {
+    fn worker(
+        text1: &[u8],
+        text2: &[u8],
+        start1: usize,
+        end1: usize,
+        start2: usize,
+        end2: usize,
+        data_file_1: String,
+        data_file_2: String,
+        cache_dir: String,
+        length_threshold: usize,
+        size_width_1: usize,
+        size_width_2: usize,
+    ) -> usize {
         let mut table1 = make_table(format!("{}.table.bin", data_file_1), start1, size_width_1);
         let mut location1 = get_next_pointer_from_table(&mut table1);
 
@@ -1013,39 +1180,68 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
         let mut location2 = get_next_pointer_from_table(&mut table2);
 
         // What do you mean this looks ugly. I see no problem here!
-        let mut outfile1 = std::io::BufWriter::new(fs::File::create(
-            format!("{}/dups_{}_{}-{}_{}_{}-{}",
-                    cache_dir,
-                    data_file_1.split("/").last().unwrap(), start1, end1,
-                    data_file_2.split("/").last().unwrap(), start2, end2,
-            )).unwrap());
-        let mut outfile1_sizes = std::io::BufWriter::new(fs::File::create(
-            format!("{}/sizes_{}_{}-{}_{}_{}-{}",
-                    cache_dir,
-                    data_file_1.split("/").last().unwrap(), start1, end1,
-                    data_file_2.split("/").last().unwrap(), start2, end2,
-            )).unwrap());
+        let mut outfile1 = std::io::BufWriter::new(
+            fs::File::create(format!(
+                "{}/dups_{}_{}-{}_{}_{}-{}",
+                cache_dir,
+                data_file_1.split("/").last().unwrap(),
+                start1,
+                end1,
+                data_file_2.split("/").last().unwrap(),
+                start2,
+                end2,
+            ))
+            .unwrap(),
+        );
+        let mut outfile1_sizes = std::io::BufWriter::new(
+            fs::File::create(format!(
+                "{}/sizes_{}_{}-{}_{}_{}-{}",
+                cache_dir,
+                data_file_1.split("/").last().unwrap(),
+                start1,
+                end1,
+                data_file_2.split("/").last().unwrap(),
+                start2,
+                end2,
+            ))
+            .unwrap(),
+        );
 
-        let mut outfile2 = std::io::BufWriter::new(fs::File::create(
-            format!("{}/dups_{}_{}-{}_{}_{}-{}",
-                    cache_dir,
-                    data_file_2.split("/").last().unwrap(), start2, end2,
-                    data_file_1.split("/").last().unwrap(), start1, end1,
-            )).unwrap());
-        let mut outfile2_sizes = std::io::BufWriter::new(fs::File::create(
-            format!("{}/sizes_{}_{}-{}_{}_{}-{}",
-                    cache_dir,
-                    data_file_2.split("/").last().unwrap(), start2, end2,
-                    data_file_1.split("/").last().unwrap(), start1, end1,
-            )).unwrap());
-        
+        let mut outfile2 = std::io::BufWriter::new(
+            fs::File::create(format!(
+                "{}/dups_{}_{}-{}_{}_{}-{}",
+                cache_dir,
+                data_file_2.split("/").last().unwrap(),
+                start2,
+                end2,
+                data_file_1.split("/").last().unwrap(),
+                start1,
+                end1,
+            ))
+            .unwrap(),
+        );
+        let mut outfile2_sizes = std::io::BufWriter::new(
+            fs::File::create(format!(
+                "{}/sizes_{}_{}-{}_{}_{}-{}",
+                cache_dir,
+                data_file_2.split("/").last().unwrap(),
+                start2,
+                end2,
+                data_file_1.split("/").last().unwrap(),
+                start1,
+                end1,
+            ))
+            .unwrap(),
+        );
 
         let mut duplicate_count = 0;
         let mut i = start1;
         let mut j = start2;
         while i < end1 && j < end2 {
-            if (i+j)%1000000000 == 0 { println!("{} / {} ", i, text1.len()); }
-            
+            if (i + j) % 1000000000 == 0 {
+                println!("{} / {} ", i, text1.len());
+            }
+
             let mut suf1 = &text1[location1 as usize..];
             let mut suf2 = &text2[location2 as usize..];
 
@@ -1053,8 +1249,10 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
             // and the suffix that begins at location2 in text2?
             // To check this we need (a) both are long enough, and
             // (b) the match is of length at least length_threshold
-            
-            let does_match = suf1.len() >= length_threshold && suf2.len() >= length_threshold && suf1[..length_threshold] == suf2[..length_threshold];
+
+            let does_match = suf1.len() >= length_threshold
+                && suf2.len() >= length_threshold
+                && suf1[..length_threshold] == suf2[..length_threshold];
 
             if does_match {
                 // We have a match between a subsequence in text1 and text2
@@ -1064,8 +1262,10 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
                 // the first string that are equal to target_suf
                 let start = i;
                 while suf1.len() >= length_threshold && &suf1[..length_threshold] == target_suf {
-    		    //println!("Match A {}", location1);
-                    outfile1.write_all(&to_bytes(&[location1 as u64][..], size_width_1)[..]).expect("Ok");
+                    //println!("Match A {}", location1);
+                    outfile1
+                        .write_all(&to_bytes(&[location1 as u64][..], size_width_1)[..])
+                        .expect("Ok");
                     i += 1;
 
                     location1 = get_next_pointer_from_table_canfail(&mut table1);
@@ -1074,25 +1274,31 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
                     }
                     suf1 = &text1[location1 as usize..];
                 }
-                duplicate_count += i-start;
-                outfile1_sizes.write_all(&to_bytes(&[(i-start) as u64][..], size_width_1)[..]).expect("Ok");
+                duplicate_count += i - start;
+                outfile1_sizes
+                    .write_all(&to_bytes(&[(i - start) as u64][..], size_width_1)[..])
+                    .expect("Ok");
 
                 // And now find all matches from the second string that are equal to target_suf
                 let start = j;
                 while suf2.len() >= length_threshold && &suf2[..length_threshold] == target_suf {
-    		    //println!("Match B {}", location2);
-                    outfile2.write_all(&to_bytes(&[location2 as u64][..], size_width_2)[..]).expect("Ok");
+                    //println!("Match B {}", location2);
+                    outfile2
+                        .write_all(&to_bytes(&[location2 as u64][..], size_width_2)[..])
+                        .expect("Ok");
                     j += 1;
-                    
+
                     location2 = get_next_pointer_from_table(&mut table2);
                     if location2 == std::u64::MAX {
                         break;
                     }
                     suf2 = &text2[location2 as usize..];
                 }
-                duplicate_count += j-start;
-                outfile2_sizes.write_all(&to_bytes(&[(j-start) as u64][..], size_width_2)[..]).expect("Ok");
-		//println!("\n");
+                duplicate_count += j - start;
+                outfile2_sizes
+                    .write_all(&to_bytes(&[(j - start) as u64][..], size_width_2)[..])
+                    .expect("Ok");
+            //println!("\n");
             } else if suf1 < suf2 {
                 // No match, and the first suffix is smaller. Increment the smaller one
                 i += 1;
@@ -1116,47 +1322,54 @@ fn cmd_across_similar(data_file_1: &String, data_file_2: &String, cache_dir: &St
         return duplicate_count;
     }
 
-
     // Start a bunch of jobs that each work on non-overlapping regions of the suffix array.
-    let increment:i64 = (text1.len() as i64-num_threads)/num_threads;
+    let increment: i64 = (text1.len() as i64 - num_threads) / num_threads;
     let _answer = crossbeam::scope(|scope| {
         let mut result = Vec::with_capacity(num_threads as usize);
         let text1 = &text1;
         let text2 = &text2;
         let mut last_end = 0;
         for i in 0..num_threads {
-            let a = std::cmp::max(0i64,i*increment-1) as usize;
-            let b = std::cmp::min(((i+1)*increment) as usize, text1.len());
-            
-            let mut table1 = std::io::BufReader::new(fs::File::open(format!("{}.table.bin", data_file_1)).unwrap());
-            let mut table2 = std::io::BufReader::new(fs::File::open(format!("{}.table.bin", data_file_2)).unwrap());
+            let a = std::cmp::max(0i64, i * increment - 1) as usize;
+            let b = std::cmp::min(((i + 1) * increment) as usize, text1.len());
+
+            let mut table1 = std::io::BufReader::new(
+                fs::File::open(format!("{}.table.bin", data_file_1)).unwrap(),
+            );
+            let mut table2 = std::io::BufReader::new(
+                fs::File::open(format!("{}.table.bin", data_file_2)).unwrap(),
+            );
             let this_start = last_end;
-            
+
             let end_seq = &text1[table_load_disk(&mut table1, b, ratio1 as usize)..];
             let this_end = off_disk_position(text2, &mut table2, end_seq, ratio2 as usize);
-            
+
             last_end = this_end;
             println!("start {} {}", this_start, this_end);
             let one_result = scope.spawn(move || {
-                
-                return worker(text1, text2,
-                              a, b,
-                              this_start, this_end,
-                              data_file_1.clone(), data_file_2.clone(),
-                              cache_dir.clone(),
-                              length_threshold,
-                              ratio1 as usize, ratio2 as usize);
+                return worker(
+                    text1,
+                    text2,
+                    a,
+                    b,
+                    this_start,
+                    this_end,
+                    data_file_1.clone(),
+                    data_file_2.clone(),
+                    cache_dir.clone(),
+                    length_threshold,
+                    ratio1 as usize,
+                    ratio2 as usize,
+                );
             });
             result.push(one_result);
         }
 
-        let thread_sum:usize = result.into_iter().map(|t| t.join()).sum();
+        let thread_sum: usize = result.into_iter().map(|t| t.join()).sum();
         println!("Duplicates found: {:?}", thread_sum);
-        
     });
     Ok(())
 }
-
 
 /*
  * A little bit of state for the merge operation below.
@@ -1169,7 +1382,7 @@ this is the value we're sorting on
 struct MergeState<'a> {
     suffix: &'a [u8],
     position: u64,
-    table_index: usize
+    table_index: usize,
 }
 
 impl<'a> Ord for MergeState<'a> {
@@ -1184,8 +1397,7 @@ impl<'a> PartialOrd for MergeState<'a> {
     }
 }
 
-
-/* 
+/*
  * Merge together M different suffix arrays (probably created with make-part).
  * That is, given strings S_i and suffix arrays A_i compute the suffix array
  * A* = make-suffix-array(concat S_i)
@@ -1198,11 +1410,11 @@ impl<'a> PartialOrd for MergeState<'a> {
  * character a hundred million times in a row. So in practice, it's linear time.
  *
  * There are thre complications here.
- * 
+ *
  * As with selfsimilar_parallel, we can't fit all A_i into memory at once, and
  * we want to make things fast and so parallelize our execution. So we do the
  * same tricks as before to make things work.
- * 
+ *
  * However we have one more problem. In order to know how to merge the final
  * few bytes of array S_0 into their correct, we need to know what bytes come next.
  * So in practice we make sure that S_{i}[-HACKSIZE:] === S_{i+1}[:HACKSIZE].
@@ -1210,57 +1422,86 @@ impl<'a> PartialOrd for MergeState<'a> {
  * will work out correctly. (I did call it hacksize after all.....)
  * In practice this works. It may not for your use case if there are long duplicates.
  */
-fn cmd_merge(data_files: &Vec<String>, output_file: &String, num_threads: i64)  -> std::io::Result<()> {
+fn cmd_merge(
+    data_files: &Vec<String>,
+    output_file: &String,
+    num_threads: i64,
+) -> std::io::Result<()> {
     // This value is declared here, but also in scripts/make_suffix_array.py
     // If you want to change it, it needs to be changed in both places.
-    const HACKSIZE:usize=100000;
-    
-    let nn:usize = data_files.len();
+    const HACKSIZE: usize = 100000;
 
-    fn load_text2<'s,'t>(fpath:String) -> Vec<u8> {
+    let nn: usize = data_files.len();
+
+    fn load_text2<'s, 't>(fpath: String) -> Vec<u8> {
         println!("Setup buffer");
-        let mut text_ = Vec::with_capacity(std::fs::metadata(fpath.clone()).unwrap().len() as usize);
+        let mut text_ =
+            Vec::with_capacity(std::fs::metadata(fpath.clone()).unwrap().len() as usize);
         println!("Done buffer {}", text_.len());
-        fs::File::open(fpath.clone()).unwrap().read_to_end(&mut text_).unwrap();
+        fs::File::open(fpath.clone())
+            .unwrap()
+            .read_to_end(&mut text_)
+            .unwrap();
         println!("Done read buffer");
         return text_;
     }
 
     // Start out by loading the data files and suffix arrays.
-    let texts:Vec<Vec<u8>> = (0..nn).map(|x| load_text2(data_files[x].clone())).collect();
+    let texts: Vec<Vec<u8>> = (0..nn).map(|x| load_text2(data_files[x].clone())).collect();
 
-    let texts_len:Vec<usize> = texts.iter().enumerate().map(|(i,x)| x.len() - (if i+1 == texts.len() {0} else {HACKSIZE})).collect();
+    let texts_len: Vec<usize> = texts
+        .iter()
+        .enumerate()
+        .map(|(i, x)| x.len() - (if i + 1 == texts.len() { 0 } else { HACKSIZE }))
+        .collect();
 
-    let metadatas:Vec<u64> = (0..nn).map(|x| {
-        let meta = fs::metadata(format!("{}.table.bin", data_files[x].clone())).unwrap();
-        assert!(meta.len()%(texts[x].len() as u64) == 0);
-        return meta.len();
-    }).collect();
+    let metadatas: Vec<u64> = (0..nn)
+        .map(|x| {
+            let meta = fs::metadata(format!("{}.table.bin", data_files[x].clone())).unwrap();
+            assert!(meta.len() % (texts[x].len() as u64) == 0);
+            return meta.len();
+        })
+        .collect();
 
-    let big_ratio = ((texts_len.iter().sum::<usize>() as f64).log2()/8.0).ceil() as usize;
+    let big_ratio = ((texts_len.iter().sum::<usize>() as f64).log2() / 8.0).ceil() as usize;
     println!("Ratio: {}", big_ratio);
 
     let ratio = metadatas[0] / (texts[0].len() as u64);
 
-    fn worker(texts:&Vec<Vec<u8>>, starts:Vec<usize>, ends:Vec<usize>, texts_len:Vec<usize>, part:usize,
-              output_file: String, data_files: Vec<String>, ratio: usize, big_ratio: usize) {
-
+    fn worker(
+        texts: &Vec<Vec<u8>>,
+        starts: Vec<usize>,
+        ends: Vec<usize>,
+        texts_len: Vec<usize>,
+        part: usize,
+        output_file: String,
+        data_files: Vec<String>,
+        ratio: usize,
+        big_ratio: usize,
+    ) {
         let nn = texts.len();
-        let mut tables:Vec<TableStream> = (0..nn).map(|x| {
-            make_table(format!("{}.table.bin", data_files[x]), starts[x], ratio)
-        }).collect();
-        
-        let mut idxs:Vec<u64> = starts.iter().map(|&x| x as u64).collect();
-        
-        let delta:Vec<u64> = (0..nn).map(|x| {
-            let pref:Vec<u64> = texts[..x].iter().map(|y| y.len() as u64).collect();
-            pref.iter().sum::<u64>() - (HACKSIZE * x) as u64
-        }).collect();
+        let mut tables: Vec<TableStream> = (0..nn)
+            .map(|x| make_table(format!("{}.table.bin", data_files[x]), starts[x], ratio))
+            .collect();
 
-        let mut next_table = std::io::BufWriter::new(File::create(format!("{}.table.bin.{:04}", output_file.clone(), part)).unwrap());
+        let mut idxs: Vec<u64> = starts.iter().map(|&x| x as u64).collect();
 
-        fn get_next_maybe_skip(mut tablestream:&mut TableStream,
-                               index:&mut u64, thresh:usize) -> u64 {
+        let delta: Vec<u64> = (0..nn)
+            .map(|x| {
+                let pref: Vec<u64> = texts[..x].iter().map(|y| y.len() as u64).collect();
+                pref.iter().sum::<u64>() - (HACKSIZE * x) as u64
+            })
+            .collect();
+
+        let mut next_table = std::io::BufWriter::new(
+            File::create(format!("{}.table.bin.{:04}", output_file.clone(), part)).unwrap(),
+        );
+
+        fn get_next_maybe_skip(
+            mut tablestream: &mut TableStream,
+            index: &mut u64,
+            thresh: usize,
+        ) -> u64 {
             //println!("{}", *index);
             let mut location = get_next_pointer_from_table_canfail(&mut tablestream);
             if location == u64::MAX {
@@ -1276,17 +1517,16 @@ fn cmd_merge(data_files: &Vec<String>, output_file: &String, num_threads: i64)  
             }
             return location;
         }
-        
+
         let mut heap = BinaryHeap::new();
 
         for x in 0..nn {
-            let position = get_next_maybe_skip(&mut tables[x],
-                                               &mut idxs[x], texts_len[x]);
+            let position = get_next_maybe_skip(&mut tables[x], &mut idxs[x], texts_len[x]);
             //println!("{} @ {}", position, x);
             heap.push(MergeState {
                 suffix: &texts[x][position as usize..],
                 position: position,
-                table_index: x
+                table_index: x,
             });
         }
 
@@ -1295,12 +1535,22 @@ fn cmd_merge(data_files: &Vec<String>, output_file: &String, num_threads: i64)  
         let mut did_warn_long_sequences = false;
 
         let mut prev = &texts[0][0..];
-        while let Some(MergeState {suffix: _suffix, position, table_index}) = heap.pop() {
+        while let Some(MergeState {
+            suffix: _suffix,
+            position,
+            table_index,
+        }) = heap.pop()
+        {
             //next_table.write_all(&(position + delta[table_index] as u64).to_le_bytes()).expect("Write OK");
-            next_table.write_all(&(position + delta[table_index] as u64).to_le_bytes()[..big_ratio]).expect("Write OK");        
+            next_table
+                .write_all(&(position + delta[table_index] as u64).to_le_bytes()[..big_ratio])
+                .expect("Write OK");
 
-            let position = get_next_maybe_skip(&mut tables[table_index],
-                                               &mut idxs[table_index], texts_len[table_index],);
+            let position = get_next_maybe_skip(
+                &mut tables[table_index],
+                &mut idxs[table_index],
+                texts_len[table_index],
+            );
             if position == u64::MAX {
                 continue;
             }
@@ -1309,7 +1559,8 @@ fn cmd_merge(data_files: &Vec<String>, output_file: &String, num_threads: i64)  
                 let next = &texts[table_index][position as usize..];
                 //println!("  {:?}", &next[..std::cmp::min(10, next.len())]);
 
-                let match_len = (0..50000000).find(|&j| !(j < next.len() && j < prev.len() && next[j] == prev[j]));
+                let match_len = (0..50000000)
+                    .find(|&j| !(j < next.len() && j < prev.len() && next[j] == prev[j]));
                 if !did_warn_long_sequences {
                     if let Some(match_len_) = match_len {
                         if match_len_ > 5000000 {
@@ -1323,11 +1574,11 @@ fn cmd_merge(data_files: &Vec<String>, output_file: &String, num_threads: i64)  
                         did_warn_long_sequences = true;
                     }
                 }
-                
+
                 heap.push(MergeState {
                     suffix: &texts[table_index][position as usize..],
                     position: position,
-                    table_index: table_index
+                    table_index: table_index,
                 });
                 prev = next;
             }
@@ -1342,18 +1593,22 @@ fn cmd_merge(data_files: &Vec<String>, output_file: &String, num_threads: i64)  
     // Start a bunch of jobs that each work on non-overlapping regions of the final resulting suffix array
     // Each job is going to look at all of the partial suffix arrays to take the relavent slice.
     let _answer = crossbeam::scope(|scope| {
-
-        let mut tables:Vec<BufReader<File>> = (0..nn).map(|x| {
-            std::io::BufReader::new(fs::File::open(format!("{}.table.bin", data_files[x])).unwrap())
-        }).collect();
+        let mut tables: Vec<BufReader<File>> = (0..nn)
+            .map(|x| {
+                std::io::BufReader::new(
+                    fs::File::open(format!("{}.table.bin", data_files[x])).unwrap(),
+                )
+            })
+            .collect();
 
         let mut starts = vec![0; nn];
-        
+
         for i in 0..num_threads as usize {
             let texts = &texts;
             let mut ends: Vec<usize> = vec![0; nn];
-            if i < num_threads as usize-1 {
-                ends[0] = (texts[0].len()+(num_threads as usize))/(num_threads as usize)*(i+1);
+            if i < num_threads as usize - 1 {
+                ends[0] =
+                    (texts[0].len() + (num_threads as usize)) / (num_threads as usize) * (i + 1);
                 let end_seq = &texts[0][table_load_disk(&mut tables[0], ends[0], ratio as usize)..];
 
                 for j in 1..ends.len() {
@@ -1378,15 +1633,16 @@ fn cmd_merge(data_files: &Vec<String>, output_file: &String, num_threads: i64)  
             //println!("OK {} {}", starts2, ends2);
             let texts_len2 = texts_len.clone();
             let _one_result = scope.spawn(move || {
-                worker(texts,
-                       starts2,
-                       ends2,
-                       texts_len2,
-                       i,
-                       (*output_file).clone(),
-                       (*data_files).clone(),
-                       ratio as usize,
-                       big_ratio as usize
+                worker(
+                    texts,
+                    starts2,
+                    ends2,
+                    texts_len2,
+                    i,
+                    (*output_file).clone(),
+                    (*data_files).clone(),
+                    ratio as usize,
+                    big_ratio as usize,
                 );
             });
 
@@ -1395,39 +1651,43 @@ fn cmd_merge(data_files: &Vec<String>, output_file: &String, num_threads: i64)  
             }
         }
     });
-    
+
     println!("Finish writing");
     let mut buffer = File::create(output_file)?;
-    for i in 0..texts.len()-1 {
-        buffer.write_all(&texts[i][..texts[i].len()-HACKSIZE])?;
+    for i in 0..texts.len() - 1 {
+        buffer.write_all(&texts[i][..texts[i].len() - HACKSIZE])?;
     }
-    buffer.write_all(&texts[texts.len()-1])?;
+    buffer.write_all(&texts[texts.len() - 1])?;
     Ok(())
 }
 
 /*
- * Given the output of either self-similar or across-similar, 
+ * Given the output of either self-similar or across-similar,
  * compute byte ranges that are duplicates.
  *
- * The similar outputs are just byte values 
- * [A_0, A_1, ..., A_N] 
+ * The similar outputs are just byte values
+ * [A_0, A_1, ..., A_N]
  * meaning that the bytes from (A_i, A_i + length_threshold) are duplicated somewhere.
- * 
+ *
  * This script converts this to ranges [a, b) for complete ranges that should be removed.
  * For example if we have a long duplicate sequence
  *    abcdefg
  * then we might have a match for `abcde` and `bcdef` and `cdefg`
  * So instead of just saying tokens 0, 1, and 2 match, here we say that [0, 7) match.
- * 
+ *
  * To do this we
- *   (a) sort the output lists, and then 
+ *   (a) sort the output lists, and then
  *   (b) collapse overlapping buckets.
  *
  * Note that as a result of doing this, we might have a sequence `qwerty` where the
  * entire sequence is never repeated in the dataset multiple times, but each byte
  * in the sequence is part of some length_threshold duplicate.
  */
-fn cmd_collect(data_file: &String, cache_dir: &String, length_threshold: u64)  -> std::io::Result<()> {
+fn cmd_collect(
+    data_file: &String,
+    cache_dir: &String,
+    length_threshold: u64,
+) -> std::io::Result<()> {
     let paths = fs::read_dir(cache_dir).unwrap();
 
     let metadata_text = fs::metadata(format!("{}", data_file))?;
@@ -1439,25 +1699,31 @@ fn cmd_collect(data_file: &String, cache_dir: &String, length_threshold: u64)  -
     let size_width = size_table / size_text;
 
     let ds_name = data_file.split("/").last().unwrap();
-    
-    
+
     let mut path_list = Vec::with_capacity(1000);
     for path in paths {
         let path = path.unwrap().path().as_path().to_str().unwrap().to_string();
-        if !path.starts_with(&Path::new(cache_dir).join(format!("dups_{}_", ds_name.clone())).into_os_string().into_string().unwrap()) {
+        if !path.starts_with(
+            &Path::new(cache_dir)
+                .join(format!("dups_{}_", ds_name.clone()))
+                .into_os_string()
+                .into_string()
+                .unwrap(),
+        ) {
             continue;
         }
         path_list.push(path);
     }
 
     // 1. Perform an initial sort of each of the found duplicates
-    
+
     let mut result = Vec::with_capacity(100);
     crossbeam::scope(|scope| {
         for path in path_list.into_iter() {
             let path = path.clone();
             let out = scope.spawn(move || {
-                let mut all_items = from_bytes(fs::read(path.clone()).unwrap(), size_width as usize);
+                let mut all_items =
+                    from_bytes(fs::read(path.clone()).unwrap(), size_width as usize);
                 //println!("Got {} {:?}", size_width, &all_items[..10]);
 
                 //let mut all_items:Vec<u64> = all_items.into_iter().filter(|&x| x%2 == 0).collect();
@@ -1468,13 +1734,13 @@ fn cmd_collect(data_file: &String, cache_dir: &String, length_threshold: u64)  -
             result.push(out);
         }
     });
-    let outputs:Vec<Vec<u64>> = result.into_iter().map(|t| t.join()).collect();
+    let outputs: Vec<Vec<u64>> = result.into_iter().map(|t| t.join()).collect();
 
-    let mut all_items:Vec<u64> = Vec::with_capacity(1000);
+    let mut all_items: Vec<u64> = Vec::with_capacity(1000);
     println!("Merging.");
 
     // 2. Perform a merge of the now-sorted lists
-    
+
     let mut heap = BinaryHeap::new();
 
     // Seed the heap with the first element of each
@@ -1484,7 +1750,7 @@ fn cmd_collect(data_file: &String, cache_dir: &String, length_threshold: u64)  -
         }
     }
 
-    let mut ranges:Vec<(u64,u64)> = Vec::with_capacity(1000);
+    let mut ranges: Vec<(u64, u64)> = Vec::with_capacity(1000);
     let mut prev_start;
     let mut prev_end;
 
@@ -1492,35 +1758,45 @@ fn cmd_collect(data_file: &String, cache_dir: &String, length_threshold: u64)  -
     if let Some(Reverse((data_pointer, index, which_array))) = heap.pop() {
         prev_start = data_pointer;
         prev_end = data_pointer + length_threshold;
-	// ensure this bucket has enough data to push the item
-        if index+1 < outputs[which_array].len() {
-            heap.push(Reverse((outputs[which_array][index+1], index+1, which_array)));
-	}
+        // ensure this bucket has enough data to push the item
+        if index + 1 < outputs[which_array].len() {
+            heap.push(Reverse((
+                outputs[which_array][index + 1],
+                index + 1,
+                which_array,
+            )));
+        }
     } else {
-        println!("No duplicates found! Either the dataset is duplicate-free or something went wrong.");
+        println!(
+            "No duplicates found! Either the dataset is duplicate-free or something went wrong."
+        );
         return Ok(());
     }
-    
+
     // Now walk the the rest of the merging
     while let Some(Reverse((data_pointer, index, which_array))) = heap.pop() {
         all_items.push(data_pointer);
 
         if data_pointer <= prev_end {
-            prev_end = data_pointer+length_threshold;
+            prev_end = data_pointer + length_threshold;
         } else {
             ranges.push((prev_start, prev_end));
             prev_start = data_pointer;
-            prev_end = data_pointer+length_threshold;
+            prev_end = data_pointer + length_threshold;
         }
-        
+
         // If this array has more data, consume it
-        if index+1 < outputs[which_array].len() {
-            heap.push(Reverse((outputs[which_array][index+1], index+1, which_array)));
+        if index + 1 < outputs[which_array].len() {
+            heap.push(Reverse((
+                outputs[which_array][index + 1],
+                index + 1,
+                which_array,
+            )));
         }
     }
     ranges.push((prev_start, prev_end));
-    
-    let strout:Vec<String> = ranges.iter().map(|&x| format!("{} {}", x.0, x.1)).collect();
+
+    let strout: Vec<String> = ranges.iter().map(|&x| format!("{} {}", x.0, x.1)).collect();
     println!("out\n{}", strout.join("\n"));
     Ok(())
 }
@@ -1528,7 +1804,7 @@ fn cmd_collect(data_file: &String, cache_dir: &String, length_threshold: u64)  -
 /*
 fn cmd_collect(data_file: &String, cache_dir: &String, length_threshold: u64)  -> std::io::Result<()> {
     let paths = fs::read_dir(cache_dir).unwrap();
-    
+
 
     let metadata_text = fs::metadata(format!("{}", data_file))?;
     let metadata_table = fs::metadata(format!("{}.table.bin", data_file))?;
@@ -1543,8 +1819,8 @@ fn cmd_collect(data_file: &String, cache_dir: &String, length_threshold: u64)  -
     let size_width = size_table / size_text;
 
     let ds_name = data_file.split("/").last().unwrap();
-    
-    
+
+
     let mut path_list = Vec::with_capacity(1000);
     for path in paths {
         let path = path.unwrap().path().as_path().to_str().unwrap().to_string();
@@ -1555,19 +1831,19 @@ fn cmd_collect(data_file: &String, cache_dir: &String, length_threshold: u64)  -
     }
 
     // 1. Perform an initial sort of each of the found duplicates
-    
+
     let mut result = Vec::with_capacity(100);
     crossbeam::scope(|scope| {
         for path in path_list.into_iter() {
             let path = path.clone();
             let out = scope.spawn(move || {
                 let all_items = from_bytes(fs::read(path.clone()).unwrap(), size_width as usize);
-		for x in all_items {
-		    for y in 0..length_threshold {
-    		        output.set_unchecked((x+y) as usize, true);
-	            }
-		}
-		return 0;
+        for x in all_items {
+            for y in 0..length_threshold {
+                    output.set_unchecked((x+y) as usize, true);
+                }
+        }
+        return 0;
             });
             result.push(out);
         }
@@ -1577,58 +1853,96 @@ fn cmd_collect(data_file: &String, cache_dir: &String, length_threshold: u64)  -
 }
 */
 
-fn main()  -> std::io::Result<()> {
-    
+fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
-    
     match &args.command {
         Commands::Make { data_file } => {
             cmd_make(data_file)?;
         }
 
-        Commands::MakePart { data_file, start_byte, end_byte } => {
+        Commands::MakePart {
+            data_file,
+            start_byte,
+            end_byte,
+        } => {
             cmd_make_part(data_file, *start_byte as u64, *end_byte as u64)?;
         }
 
-        Commands::CountOccurrences { data_file, query_file, print_location, load_disk } => {
-            cmd_count_occurrences(data_file,
-                                  query_file,
-				  *print_location,
-				  *load_disk)?;
+        Commands::CountOccurrences {
+            data_file,
+            query_file,
+            print_location,
+            load_disk,
+        } => {
+            cmd_count_occurrences(data_file, query_file, *print_location, *load_disk)?;
         }
 
-        Commands::CountOccurrencesMulti { data_file, query_file, load_disk } => {
-            cmd_count_occurrences_multi(data_file,
-                                        query_file,
-					*load_disk)?;
+        Commands::CountOccurrencesMulti {
+            data_file,
+            query_file,
+            load_disk,
+        } => {
+            cmd_count_occurrences_multi(data_file, query_file, *load_disk)?;
         }
 
-        Commands::FindTrainingData { data_file, query_file } => {
-            cmd_find_training_data_2(data_file,
-	                           query_file)?;
+        Commands::FindTrainingData {
+            data_file,
+            query_file,
+        } => {
+            cmd_find_training_data_2(data_file, query_file)?;
         }
 
-        Commands::SelfSimilar { data_file, length_threshold, frequency_threshold, only_save_one, cache_dir, num_threads } => {
-            cmd_self_similar(data_file, length_threshold, frequency_threshold, only_save_one, cache_dir, *num_threads)?;
+        Commands::SelfSimilar {
+            data_file,
+            length_threshold,
+            frequency_threshold,
+            only_save_one,
+            cache_dir,
+            num_threads,
+        } => {
+            cmd_self_similar(
+                data_file,
+                length_threshold,
+                frequency_threshold,
+                only_save_one,
+                cache_dir,
+                *num_threads,
+            )?;
         }
 
-        Commands::AcrossSimilar { data_file_1, data_file_2, cache_dir, length_threshold, num_threads } => {
-            cmd_across_similar(data_file_1,
-                               data_file_2,
-                               cache_dir,
-                               *length_threshold,
-                               *num_threads)?;
+        Commands::AcrossSimilar {
+            data_file_1,
+            data_file_2,
+            cache_dir,
+            length_threshold,
+            num_threads,
+        } => {
+            cmd_across_similar(
+                data_file_1,
+                data_file_2,
+                cache_dir,
+                *length_threshold,
+                *num_threads,
+            )?;
         }
 
-        Commands::Merge { suffix_path, output_file, num_threads } => {
+        Commands::Merge {
+            suffix_path,
+            output_file,
+            num_threads,
+        } => {
             cmd_merge(suffix_path, output_file, *num_threads)?;
         }
 
-        Commands::Collect { data_file, cache_dir, length_threshold } => {
+        Commands::Collect {
+            data_file,
+            cache_dir,
+            length_threshold,
+        } => {
             cmd_collect(data_file, cache_dir, *length_threshold)?;
         }
     }
-    
+
     Ok(())
 }
