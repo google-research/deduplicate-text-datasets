@@ -12,23 +12,21 @@
  * limitations under the License.
  */
 
-
 /* This code is almost entirely based on TODO from TODO. The original
  * program was licensed under the MIT license. We have modified it for
  * for two reasons:
- * 
+ *
  * 1. The original implementation used u32 indices to point into the
  *    suffix array. This is smaller and fairly cache efficient, but here
  *    in the Real World we have to work with Big Data and our datasets
  *    are bigger than 2^32 bytes. So we have to work with u64 instead.
- * 
+ *
  * 2. The original implementation had a utf8 interface. This is very
  *    convenient if you're working with strings, but we are working with
  *    byte arrays almost exclusively, and so just cut out the strings.
- * 
+ *
  * When the comments below contradict these two statements, that's why.
- */ 
-
+ */
 
 use std::borrow::Cow;
 use std::fmt;
@@ -113,7 +111,10 @@ impl<'s, 't> SuffixTable<'s, 't> {
     {
         let text = text.into();
         let table = Cow::Owned(sais_table(&text));
-        SuffixTable { text: text, table: table }
+        SuffixTable {
+            text: text,
+            table: table,
+        }
     }
 
     /// The same as `new`, except it runs in `O(n^2 * logn)` time.
@@ -129,7 +130,10 @@ impl<'s, 't> SuffixTable<'s, 't> {
     {
         let text = text.into();
         let table = Cow::Owned(naive_table(&text));
-        SuffixTable { text: text, table: table }
+        SuffixTable {
+            text: text,
+            table: table,
+        }
     }
 
     /// Creates a new suffix table from an existing list of lexicographically
@@ -149,7 +153,10 @@ impl<'s, 't> SuffixTable<'s, 't> {
     {
         let (text, table) = (text.into(), table.into());
         assert_eq!(text.len(), table.len());
-        SuffixTable { text: text, table: table }
+        SuffixTable {
+            text: text,
+            table: table,
+        }
     }
 
     /// Extract the parts of a suffix table.
@@ -275,8 +282,7 @@ impl<'s, 't> SuffixTable<'s, 't> {
         // it's outside the range of suffixes.
         if self.text.len() == 0
             || query.len() == 0
-            || (query < self.suffix_bytes(0)
-                && !self.suffix_bytes(0).starts_with(query))
+            || (query < self.suffix_bytes(0) && !self.suffix_bytes(0).starts_with(query))
             || query > self.suffix_bytes(self.len() - 1)
         {
             return &[];
@@ -289,9 +295,7 @@ impl<'s, 't> SuffixTable<'s, 't> {
         // The key difference is that after we find the start index, we look
         // for the end by finding the first occurrence that doesn't start
         // with `query`. That becomes our upper bound.
-        let start = binary_search(&self.table, |&sufi| {
-            query <= &self.text[sufi as usize..]
-        });
+        let start = binary_search(&self.table, |&sufi| query <= &self.text[sufi as usize..]);
         let end = start
             + binary_search(&self.table[start..], |&sufi| {
                 !self.text[sufi as usize..].starts_with(query)
@@ -312,12 +316,7 @@ impl<'s, 't> fmt::Debug for SuffixTable<'s, 't> {
         writeln!(f, "\n-----------------------------------------")?;
         writeln!(f, "SUFFIX TABLE")?;
         for (rank, &sufstart) in self.table.iter().enumerate() {
-            writeln!(
-                f,
-                "suffix[{}] {}",
-                rank,
-                sufstart,
-            )?;
+            writeln!(f, "suffix[{}] {}", rank, sufstart,)?;
         }
         writeln!(f, "-----------------------------------------")
     }
@@ -366,15 +365,17 @@ fn lcp_lens_quadratic(text: &[u8], table: &[u64]) -> Vec<u64> {
     //   LCP_LENS[i] = lcp_len(suf[i-1], suf[i])
     let mut lcps = vec![0u64; table.len()];
     for (i, win) in table.windows(2).enumerate() {
-        lcps[i + 1] =
-            lcp_len(&text[win[0] as usize..], &text[win[1] as usize..]);
+        lcps[i + 1] = lcp_len(&text[win[0] as usize..], &text[win[1] as usize..]);
     }
     lcps
 }
 
 #[allow(dead_code)]
 fn lcp_len(a: &[u8], b: &[u8]) -> u64 {
-    a.iter().zip(b.iter()).take_while(|(ca, cb)| ca == cb).count() as u64
+    a.iter()
+        .zip(b.iter())
+        .take_while(|(ca, cb)| ca == cb)
+        .count() as u64
 }
 
 #[allow(dead_code)]
@@ -508,7 +509,12 @@ where
     if name < num_wstrs {
         let split_at = sa.len() - (num_wstrs as usize);
         let (r_sa, r_text) = sa.split_at_mut(split_at);
-        sais(&mut r_sa[..num_wstrs as usize], stypes, bins, &LexNames(r_text));
+        sais(
+            &mut r_sa[..num_wstrs as usize],
+            stypes,
+            bins,
+            &LexNames(r_text),
+        );
         stypes.compute(text);
     } else {
         for i in 0..num_wstrs {
@@ -598,7 +604,9 @@ enum SuffixType {
 
 impl SuffixTypes {
     fn new(num_bytes: u64) -> SuffixTypes {
-        SuffixTypes { types: vec![SuffixType::Ascending; num_bytes as usize] }
+        SuffixTypes {
+            types: vec![SuffixType::Ascending; num_bytes as usize],
+        }
     }
 
     fn compute<'a, T>(&mut self, text: &T)
@@ -688,8 +696,7 @@ impl SuffixType {
 impl PartialEq for SuffixType {
     #[inline]
     fn eq(&self, other: &SuffixType) -> bool {
-        (self.is_asc() && other.is_asc())
-            || (self.is_desc() && other.is_desc())
+        (self.is_asc() && other.is_asc()) || (self.is_desc() && other.is_desc())
     }
 }
 
